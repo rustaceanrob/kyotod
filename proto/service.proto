@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package kyotod;
+
+service Daemon {
+  rpc Balance (BalanceRequest) returns (BalanceReply) {}
+  rpc NextAddress (ReceiveRequest) returns (ReceiveResponse) {}
+  rpc Stop (StopRequest) returns (StopResponse) {}
+}
+
+message BalanceRequest {
+  bool in_satoshis = 1;
+  bool verbose = 2;
+}
+
+message BalanceReply {
+  string balance = 1;
+}
+
+message ReceiveRequest {}
+
+message ReceiveResponse {
+  string address = 1;
+  uint32 index = 2;
+}
+
+message StopRequest {}
+
+message StopResponse {}
