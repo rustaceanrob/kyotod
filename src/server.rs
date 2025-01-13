@@ -11,7 +11,8 @@ use bdk_wallet::{KeychainKind, PersistedWallet, Wallet};
 
 use kyotod::daemon_server::{Daemon, DaemonServer};
 use kyotod::{
-    BalanceReply, BalanceRequest, ReceiveRequest, ReceiveResponse, StopRequest, StopResponse,
+    BalanceReply, BalanceRequest, DescriptorRequest, DescriptorResponse, ReceiveRequest,
+    ReceiveResponse, StopRequest, StopResponse,
 };
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -108,6 +109,21 @@ impl Daemon for WalletService {
         Ok(Response::new(reply))
     }
 
+    async fn descriptors(
+        &self,
+        _request: Request<DescriptorRequest>,
+    ) -> Result<Response<DescriptorResponse>, Status> {
+        let wallet_lock = self.wallet.lock().await;
+        let receive = wallet_lock
+            .public_descriptor(KeychainKind::External)
+            .to_string();
+        let change = wallet_lock
+            .public_descriptor(KeychainKind::Internal)
+            .to_string();
+        let reply = DescriptorResponse { receive, change };
+        Ok(Response::new(reply))
+    }
+
     async fn stop(&self, _request: Request<StopRequest>) -> Result<Response<StopResponse>, Status> {
         let client_lock = self.sender.lock().await;
         tracing::info!("Shutting down");
@@ -160,10 +176,9 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut builder = LightClientBuilder::new();
-    builder = if let Some(height) = height {
-        builder.scan_after(height)
-    } else {
-        builder
+
+    if let Some(height) = height {
+        builder = builder.scan_after(height)
     };
 
     let LightClient {

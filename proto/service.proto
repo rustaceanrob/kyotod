@@ -5,6 +5,7 @@ package kyotod;
 service Daemon {
   rpc Balance (BalanceRequest) returns (BalanceReply) {}
   rpc NextAddress (ReceiveRequest) returns (ReceiveResponse) {}
+  rpc Descriptors (DescriptorRequest) returns (DescriptorResponse) {}
   rpc Stop (StopRequest) returns (StopResponse) {}
 }
 
@@ -22,6 +23,13 @@ message ReceiveRequest {}
 message ReceiveResponse {
   string address = 1;
   uint32 index = 2;
+}
+
+message DescriptorRequest {}
+
+message DescriptorResponse {
+  string receive = 1;
+  string change = 2;
 }
 
 message StopRequest {}

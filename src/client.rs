@@ -1,5 +1,5 @@
 use kyotod::{daemon_client::DaemonClient, StopRequest};
-use kyotod::{BalanceRequest, ReceiveRequest};
+use kyotod::{BalanceRequest, DescriptorRequest, ReceiveRequest};
 
 use clap::{Args, Parser, Subcommand};
 use qrcode::render::unicode;
@@ -21,6 +21,8 @@ struct Arguments {
 enum Command {
     /// Get the balance of the underlying wallet.
     Balance(Balance),
+    /// Print the descriptors of the underlying wallet.
+    Descriptors,
     /// Generate a new receiving address.
     Receive,
     /// Stop the daemon.
@@ -54,6 +56,13 @@ async fn main() -> anyhow::Result<()> {
             let balance = balance_response.into_inner().balance;
             println!("{balance}")
         }
+        Command::Descriptors => {
+            let request = DescriptorRequest {};
+            let descriptor_response = client.descriptors(request).await?;
+            let descriptors = descriptor_response.into_inner();
+            println!("Receive (external) descriptor: {}", descriptors.receive);
+            println!("Change (internal) descriptor: {}", descriptors.change);
+        }
         Command::Receive => {
             let request = ReceiveRequest {};
             let address_response = client.next_address(request).await?;
@@ -80,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Stop => {
             let request = StopRequest {};
-            let _ = client.stop(request).await;
+            client.stop(request).await?;
         }
     }
     Ok(())

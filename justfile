@@ -14,6 +14,9 @@ serve:
 balance: 
   cargo run --bin client balance
 
+descriptors:
+  cargo run --bin client descriptors
+
 receive:
   cargo run --bin client receive
 
