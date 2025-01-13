@@ -11,6 +11,9 @@ check:
 serve:
   cargo run --bin server
 
+help:
+  cargo run --bin client help
+
 balance: 
   cargo run --bin client balance
 
