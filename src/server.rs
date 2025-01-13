@@ -62,22 +62,22 @@ impl Daemon for WalletService {
         let unconfirmed = balance.trusted_pending + balance.untrusted_pending;
         let balance_str = if req.in_satoshis && req.verbose {
             format!(
-                "Total: {} SAT, Confirmed: {} SAT, Unconfirmed: {} SAT",
+                "Total: {:<16} SAT, Confirmed: {:<16} SAT, Unconfirmed: {:<16} SAT",
                 balance.total().to_sat(),
                 balance.confirmed.to_sat(),
                 unconfirmed.to_sat(),
             )
         } else if !req.in_satoshis && req.verbose {
             format!(
-                "Total: {} BTC, Confirmed: {} BTC, Unconfirmed: {} BTC",
+                "Total: {:<16} BTC, Confirmed: {:<16} BTC, Unconfirmed: {:<16} BTC",
                 balance.total().to_btc(),
                 balance.confirmed.to_btc(),
                 unconfirmed.to_btc(),
             )
         } else if req.in_satoshis && !req.verbose {
-            format!("{} SAT", balance.total().to_sat())
+            format!("{:<16} SAT", balance.total().to_sat())
         } else {
-            format!("{} BTC", balance.total().to_btc())
+            format!("{:<16} BTC", balance.total().to_btc())
         };
         let reply = BalanceReply {
             balance: balance_str,
@@ -129,7 +129,7 @@ impl Daemon for WalletService {
             let index = unspent.derivation_index;
             let confirmation = if unspent.chain_position.is_confirmed() {
                 format!(
-                    "confirmed at {}",
+                    "confirmed at {:>7}",
                     unspent
                         .chain_position
                         .confirmation_height_upper_bound()
@@ -140,12 +140,12 @@ impl Daemon for WalletService {
             };
             let amount = if req.in_satoshis {
                 let sat = unspent.txout.value.to_sat();
-                format!("{} SAT", sat)
+                format!("{:<16} SAT", sat)
             } else {
                 let btc = unspent.txout.value.to_btc();
-                format!("{} BTC", btc)
+                format!("{:<16} BTC", btc)
             };
-            let coin = format!("{} {}/{} {}", amount, keychain, index, confirmation);
+            let coin = format!("{} {:>8}/{:<3} {}", amount, keychain, index, confirmation);
             coins.push(coin);
         }
         let reply = CoinResponse { coins };

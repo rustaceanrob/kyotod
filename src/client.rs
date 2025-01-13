@@ -104,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
             let descriptor_response = client.descriptors(request).await?;
             let descriptors = descriptor_response.into_inner();
             println!("Receive (external) descriptor: {}", descriptors.receive);
-            println!("Change (internal) descriptor: {}", descriptors.change);
+            println!("Change  (internal) descriptor: {}", descriptors.change);
         }
         Command::IsMine(IsMine { address }) => {
             let request = IsMineRequest {
