@@ -6,6 +6,8 @@ service Daemon {
   rpc Balance (BalanceRequest) returns (BalanceReply) {}
   rpc NextAddress (ReceiveRequest) returns (ReceiveResponse) {}
   rpc Descriptors (DescriptorRequest) returns (DescriptorResponse) {}
+  rpc Coins (CoinRequest) returns (CoinResponse) {}
+  rpc IsMine (IsMineRequest) returns (IsMineResponse) {}
   rpc Stop (StopRequest) returns (StopResponse) {}
 }
 
@@ -30,6 +32,24 @@ message DescriptorRequest {}
 message DescriptorResponse {
   string receive = 1;
   string change = 2;
+}
+
+message CoinRequest {
+  bool in_satoshis = 1;
+  uint64 sat_threshold = 2;
+  uint32 height_threshold = 3;
+}
+
+message CoinResponse {
+  repeated string coins = 1;
+}
+
+message IsMineRequest {
+  string address = 1;
+}
+
+message IsMineResponse {
+  string response = 1;
 }
 
 message StopRequest {}

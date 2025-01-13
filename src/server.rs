@@ -5,14 +5,14 @@ use std::sync::Arc;
 use bdk_kyoto::builder::LightClientBuilder;
 use bdk_kyoto::logger::TraceLogger;
 use bdk_kyoto::{EventSender, EventSenderExt, LightClient};
-use bdk_wallet::bitcoin::Network;
+use bdk_wallet::bitcoin::{Address, Network};
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::{KeychainKind, PersistedWallet, Wallet};
 
 use kyotod::daemon_server::{Daemon, DaemonServer};
 use kyotod::{
-    BalanceReply, BalanceRequest, DescriptorRequest, DescriptorResponse, ReceiveRequest,
-    ReceiveResponse, StopRequest, StopResponse,
+    BalanceReply, BalanceRequest, CoinRequest, CoinResponse, DescriptorRequest, DescriptorResponse,
+    IsMineRequest, IsMineResponse, ReceiveRequest, ReceiveResponse, StopRequest, StopResponse,
 };
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -109,6 +109,49 @@ impl Daemon for WalletService {
         Ok(Response::new(reply))
     }
 
+    async fn coins(&self, request: Request<CoinRequest>) -> Result<Response<CoinResponse>, Status> {
+        let req = request.into_inner();
+        let wallet_lock = self.wallet.lock().await;
+        let unspent_outputs = wallet_lock.list_unspent();
+        let mut coins = Vec::new();
+        let filtered_coins = unspent_outputs
+            .filter(|o| o.txout.value.to_sat() > req.sat_threshold)
+            .filter(|o| {
+                o.chain_position
+                    .confirmation_height_upper_bound()
+                    .map_or(true, |upperbound| upperbound > req.height_threshold)
+            });
+        for unspent in filtered_coins {
+            let keychain = match unspent.keychain {
+                KeychainKind::Internal => "change",
+                KeychainKind::External => "receive",
+            };
+            let index = unspent.derivation_index;
+            let confirmation = if unspent.chain_position.is_confirmed() {
+                format!(
+                    "confirmed at {}",
+                    unspent
+                        .chain_position
+                        .confirmation_height_upper_bound()
+                        .unwrap_or_default()
+                )
+            } else {
+                "unconfirmed".into()
+            };
+            let amount = if req.in_satoshis {
+                let sat = unspent.txout.value.to_sat();
+                format!("{} SAT", sat)
+            } else {
+                let btc = unspent.txout.value.to_btc();
+                format!("{} BTC", btc)
+            };
+            let coin = format!("{} {}/{} {}", amount, keychain, index, confirmation);
+            coins.push(coin);
+        }
+        let reply = CoinResponse { coins };
+        Ok(Response::new(reply))
+    }
+
     async fn descriptors(
         &self,
         _request: Request<DescriptorRequest>,
@@ -121,6 +164,33 @@ impl Daemon for WalletService {
             .public_descriptor(KeychainKind::Internal)
             .to_string();
         let reply = DescriptorResponse { receive, change };
+        Ok(Response::new(reply))
+    }
+
+    async fn is_mine(
+        &self,
+        request: Request<IsMineRequest>,
+    ) -> Result<Response<IsMineResponse>, Status> {
+        let req = request.into_inner();
+        let addr_res = Address::from_str(&req.address);
+        if let Err(e) = addr_res {
+            let reply = IsMineResponse {
+                response: format!("Invalid address: {}", e),
+            };
+            return Ok(Response::new(reply));
+        }
+        let wallet_lock = self.wallet.lock().await;
+        let addr_res = addr_res.unwrap().require_network(wallet_lock.network());
+        if let Err(e) = addr_res {
+            let reply = IsMineResponse {
+                response: format!("Invalid address: {}", e),
+            };
+            return Ok(Response::new(reply));
+        }
+        let is_mine = wallet_lock.is_mine(addr_res.unwrap().into());
+        let reply = IsMineResponse {
+            response: format!("{}", is_mine),
+        };
         Ok(Response::new(reply))
     }
 

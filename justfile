@@ -14,6 +14,9 @@ serve:
 balance: 
   cargo run --bin client balance
 
+coins:
+  cargo run --bin client coins
+
 descriptors:
   cargo run --bin client descriptors
 
