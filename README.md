@@ -33,17 +33,34 @@ Shut down the daemon from the client
 cargo run --bin client stop
 ```
 
+## Configuration
+
+Wallet configuration is done through the `wallet.toml` file in the root of this directory. The following tables describe the available configurations. 
+
+#### Global keys
+
+| key | value | options |
+|-----|-------|---------|
+| network | String | signet / regtest / bitcoin |
+
+#### `[wallet]`
+
+| key | value | description |
+|-----|-------|-------------|
+| receive | String | A valid descriptor for the configured network | 
+| change  | String | A valid descriptor for the configured network |
+| lookahead | Optional Uint32 | The number of scripts to peek ahead when checking block filters. Useful for recovering wallets with an approximate number of transactions |
+| birthday | Optional Uint32 | The block height to look for transactions *strictly after* |
+
+#### `[node]`
+| key | value | description |
+|-----|-------|-------------|
+| connections | Optional Uint8 | The number of connections for the node to maintain |
+
+
 ## Usage
 
 The preferred workflow to issue most commands is by using `just`. Read more about [`just`](https://github.com/casey/just).
-
-Settings for the daemon are pulled from the `config_spec.toml`. You may alter any one of these parameters to your discretion, or pass them as CLI arguments when starting the server. For instance:
-
-```
-cargo run --bin server --height=170000
-```
-
-Notably, you may want to change the descriptors to a signet wallet you control.
 
 All wallet data is stored within a `.wallet` folder contained in this directory.
 
