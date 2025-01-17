@@ -24,7 +24,25 @@ mod kyotod {
     tonic::include_proto!("kyotod");
 }
 
-configure_me::include_config!();
+#[derive(serde::Deserialize)]
+struct WalletConfig {
+    network: Option<String>,
+    wallet: WalletKeys,
+    node: NodeKeys,
+}
+
+#[derive(serde::Deserialize)]
+struct WalletKeys {
+    receive: String,
+    change: String,
+    lookahead: Option<u32>,
+    birthday: Option<u32>,
+}
+
+#[derive(serde::Deserialize)]
+struct NodeKeys {
+    connections: Option<u8>,
+}
 
 #[derive(Debug)]
 struct WalletService {
@@ -212,7 +230,6 @@ impl Daemon for WalletService {
 async fn main() -> anyhow::Result<()> {
     let listen = "[::1]:50051".parse()?;
 
-    let (config, _) = Config::including_optional_config_files::<&[&str]>(&[]).unwrap_or_exit();
     // General
     let mut root_dir = PathBuf::from(".");
     root_dir.push(".wallet");
@@ -220,13 +237,16 @@ async fn main() -> anyhow::Result<()> {
         std::fs::create_dir_all(&root_dir)?
     }
     // Wallet configs
-    let receive = config.receive_descriptor;
-    let change = config.change_descriptor;
-    let lookahead = config.lookahead;
-    let network = Network::from_str(&config.network)?;
+    let wallet_toml = std::fs::read_to_string("./wallet.toml")?;
+    let wallet_config: WalletConfig = toml::from_str(&wallet_toml)?;
+    let receive = wallet_config.wallet.receive;
+    let change = wallet_config.wallet.change;
+    let lookahead = wallet_config.wallet.lookahead.unwrap_or(30);
+    let network_str = wallet_config.network.unwrap_or("signet".to_string());
+    let network = Network::from_str(&network_str)?;
     // Node configs
-    let connections = config.peers;
-    let height = config.height;
+    let connections = wallet_config.node.connections.unwrap_or(2);
+    let height = wallet_config.wallet.birthday;
 
     let mut conn = Connection::open(root_dir.join(".bdk_wallet.sqlite"))?;
 

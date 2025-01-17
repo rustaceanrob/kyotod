@@ -11,12 +11,13 @@ spec = "config_spec.toml"
 [dependencies]
 anyhow = "1"
 clap = { version="4.5.26", features = ["derive"] }
+toml = { version="0.8.19" }
+serde = "1.0.145"
 qrcode = "0.12.0"
 
 bdk_wallet = { version = "1.0.0", features = ["rusqlite"] }
 bdk_kyoto = { version = "0.6.0" }
 
-configure_me = "0.4.0"
 tonic = "0.12.3"
 prost = "0.13"
 tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "sync"] }
@@ -27,7 +28,6 @@ tracing-appender = { version = "0.2" }
 
 [build-dependencies]
 tonic-build = "0.12.3"
-configure_me_codegen = "0.4.0"
 
 [[bin]]
 name = "server"
