@@ -8,6 +8,7 @@ service Daemon {
   rpc Descriptors (DescriptorRequest) returns (DescriptorResponse) {}
   rpc Coins (CoinRequest) returns (CoinResponse) {}
   rpc IsMine (IsMineRequest) returns (IsMineResponse) {}
+  rpc CreatePsbt (CreatePsbtRequest) returns (CreatePsbtResponse) {}
   rpc Stop (StopRequest) returns (StopResponse) {}
 }
 
@@ -49,6 +50,16 @@ message IsMineRequest {
 }
 
 message IsMineResponse {
+  string response = 1;
+}
+
+message CreatePsbtRequest {
+  string address = 1;
+  uint64 sats = 2;
+  uint64 feerate = 3;
+}
+
+message CreatePsbtResponse {
   string response = 1;
 }
 

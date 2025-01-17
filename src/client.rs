@@ -1,7 +1,10 @@
 use bdk_kyoto::kyoto::Address;
 use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use kyotod::{daemon_client::DaemonClient, StopRequest};
-use kyotod::{BalanceRequest, CoinRequest, DescriptorRequest, IsMineRequest, ReceiveRequest};
+use kyotod::{
+    BalanceRequest, CoinRequest, CreatePsbtRequest, DescriptorRequest, IsMineRequest,
+    ReceiveRequest,
+};
 
 use clap::{Args, Parser, Subcommand};
 use qrcode::render::unicode;
@@ -25,6 +28,8 @@ enum Command {
     Balance(Balance),
     /// List the coins (unspent outputs) owned by the wallet.
     Coins(GetCoin),
+    /// Create an unsigned bitcoin transaction.
+    CreatePsbt(CreatePsbt),
     /// Print the descriptors of the underlying wallet.
     Descriptors,
     /// Check if a Bitcoin address belongs to the wallet.
@@ -65,6 +70,19 @@ struct IsMine {
     address: Address<NetworkUnchecked>,
 }
 
+#[derive(Debug, Args)]
+struct CreatePsbt {
+    /// A Bitcoin address to send funds to.
+    #[arg(long)]
+    recipient: Address<NetworkUnchecked>,
+    /// The value, in Satoshis, to send to the recipient.
+    #[arg(long)]
+    value: u64,
+    /// The fee rate in Satoshis per Vbyte to target for the transaction.
+    #[arg(long)]
+    feerate: u64,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut client = DaemonClient::connect("http://[::1]:50051").await?;
@@ -81,6 +99,20 @@ async fn main() -> anyhow::Result<()> {
             let balance_response = client.balance(request).await?;
             let balance = balance_response.into_inner().balance;
             println!("{balance}")
+        }
+        Command::CreatePsbt(CreatePsbt {
+            recipient,
+            value,
+            feerate,
+        }) => {
+            let request = CreatePsbtRequest {
+                address: recipient.assume_checked().to_string(),
+                sats: value,
+                feerate,
+            };
+            let create_psbt_response = client.create_psbt(request).await?;
+            let response = create_psbt_response.into_inner().response;
+            println!("{response}");
         }
         Command::Coins(GetCoin {
             in_satoshis,
@@ -121,11 +153,11 @@ async fn main() -> anyhow::Result<()> {
             println!("===============================================================");
             println!("{}", inner.address);
             println!("===============================================================");
-            println!("");
+            println!(" ");
             println!("Address revealed to index {}", inner.index);
             let uri = format!("bitcoin:{}", inner.address);
             println!("{uri}");
-            println!("");
+            println!(" ");
             let qr_code = QrCode::new(uri)?;
             let qr_string = qr_code
                 .render()
