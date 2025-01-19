@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -5,15 +7,15 @@ use std::sync::Arc;
 use bdk_kyoto::builder::LightClientBuilder;
 use bdk_kyoto::logger::TraceLogger;
 use bdk_kyoto::{EventSender, EventSenderExt, FeeRate, LightClient};
-use bdk_wallet::bitcoin::{Address, Amount, Network};
+use bdk_wallet::bitcoin::{Address, Amount, Network, Psbt};
 use bdk_wallet::rusqlite::Connection;
-use bdk_wallet::{KeychainKind, PersistedWallet, Wallet};
+use bdk_wallet::{KeychainKind, PersistedWallet, SignOptions, Wallet};
 
 use kyotod::daemon_server::{Daemon, DaemonServer};
 use kyotod::{
-    BalanceReply, BalanceRequest, CoinRequest, CoinResponse, CreatePsbtRequest, CreatePsbtResponse,
-    DescriptorRequest, DescriptorResponse, IsMineRequest, IsMineResponse, ReceiveRequest,
-    ReceiveResponse, StopRequest, StopResponse,
+    BalanceReply, BalanceRequest, BroadcastPsbtRequest, BroadcastPsbtResponse, CoinRequest,
+    CoinResponse, CreatePsbtRequest, CreatePsbtResponse, DescriptorRequest, DescriptorResponse,
+    IsMineRequest, IsMineResponse, ReceiveRequest, ReceiveResponse, StopRequest, StopResponse,
 };
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -102,6 +104,59 @@ impl Daemon for WalletService {
             balance: balance_str,
         };
         Ok(Response::new(reply))
+    }
+
+    async fn broadcast_psbt(
+        &self,
+        request: Request<BroadcastPsbtRequest>,
+    ) -> Result<Response<BroadcastPsbtResponse>, Status> {
+        let req = request.into_inner();
+        let path = PathBuf::from(&req.file);
+        let file = File::open(path).map_err(|e| {
+            Status::new(tonic::Code::Aborted, format!("Could not open PSBT: {}", e))
+        })?;
+        let mut reader = BufReader::new(file);
+        let mut psbt = Psbt::deserialize_from_reader(&mut reader).map_err(|e| {
+            Status::new(
+                tonic::Code::Aborted,
+                format!("Could not deserialize PSBT: {}", e),
+            )
+        })?;
+        let wallet_lock = self.wallet.lock().await;
+        let finalized = wallet_lock
+            .finalize_psbt(&mut psbt, SignOptions::default())
+            .map_err(|e| {
+                Status::new(
+                    tonic::Code::Aborted,
+                    format!("Could not finalize PSBT: {}", e),
+                )
+            })?;
+        if finalized {
+            let extracted = psbt.extract_tx().map_err(|e| {
+                Status::new(
+                    tonic::Code::Aborted,
+                    format!("Could not extract transaction: {}", e),
+                )
+            })?;
+            let client = self.sender.lock().await;
+            client
+                .broadcast_tx(bdk_kyoto::TxBroadcast {
+                    tx: extracted,
+                    broadcast_policy: bdk_kyoto::TxBroadcastPolicy::RandomPeer,
+                })
+                .await
+                .map_err(|_| {
+                    Status::new(tonic::Code::Aborted, "Failed to broadcast transaction")
+                })?;
+            Ok(Response::new(BroadcastPsbtResponse {
+                response: "Successfully sent transaction over the wire".into(),
+            }))
+        } else {
+            return Err(Status::new(
+                tonic::Code::Aborted,
+                "PSBT finalization failed",
+            ));
+        }
     }
 
     async fn next_address(

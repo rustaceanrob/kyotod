@@ -2,8 +2,8 @@ use bdk_kyoto::kyoto::Address;
 use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use kyotod::{daemon_client::DaemonClient, StopRequest};
 use kyotod::{
-    BalanceRequest, CoinRequest, CreatePsbtRequest, DescriptorRequest, IsMineRequest,
-    ReceiveRequest,
+    BalanceRequest, BroadcastPsbtRequest, CoinRequest, CreatePsbtRequest, DescriptorRequest,
+    IsMineRequest, ReceiveRequest,
 };
 
 use clap::{Args, Parser, Subcommand};
@@ -26,6 +26,8 @@ struct Arguments {
 enum Command {
     /// Get the balance of the underlying wallet.
     Balance(Balance),
+    /// Finalize, extract, and broadcast the transaction from a PSBT.
+    BroadcastPsbt(BroadcastPsbt),
     /// List the coins (unspent outputs) owned by the wallet.
     Coins(GetCoin),
     /// Create an unsigned bitcoin transaction.
@@ -83,6 +85,13 @@ struct CreatePsbt {
     feerate: u64,
 }
 
+#[derive(Args, Debug)]
+struct BroadcastPsbt {
+    /// The path to a PSBT file.
+    #[arg(long)]
+    path: String,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut client = DaemonClient::connect("http://[::1]:50051").await?;
@@ -99,6 +108,12 @@ async fn main() -> anyhow::Result<()> {
             let balance_response = client.balance(request).await?;
             let balance = balance_response.into_inner().balance;
             println!("{balance}")
+        }
+        Command::BroadcastPsbt(BroadcastPsbt { path }) => {
+            let request = BroadcastPsbtRequest { file: path };
+            let psbt_response = client.broadcast_psbt(request).await?;
+            let broadcast_response = psbt_response.into_inner().response;
+            println!("{broadcast_response}");
         }
         Command::CreatePsbt(CreatePsbt {
             recipient,
