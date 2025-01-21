@@ -265,6 +265,14 @@ impl Daemon for WalletService {
                 format!("Could not write to file {}", e),
             )
         })?;
+        let mut conn = self.conn.lock().await;
+        if let Err(e) = wallet_lock.persist(&mut conn) {
+            tracing::warn!("Wallet database operation failed");
+            return Err(Status::new(
+                tonic::Code::Aborted,
+                format!("Datbase operation failed {}", e),
+            ));
+        }
         Ok(Response::new(CreatePsbtResponse {
             response: "Successfully created PSBT at `unsigned_transaction.psbt`".into(),
         }))
