@@ -9,6 +9,7 @@ service Daemon {
   rpc Coins (CoinRequest) returns (CoinResponse) {}
   rpc IsMine (IsMineRequest) returns (IsMineResponse) {}
   rpc CreatePsbt (CreatePsbtRequest) returns (CreatePsbtResponse) {}
+  rpc DrainPsbt (DrainPsbtRequest) returns (DrainPsbtResponse) {}
   rpc BroadcastPsbt (BroadcastPsbtRequest) returns (BroadcastPsbtResponse) {}
   rpc Stop (StopRequest) returns (StopResponse) {}
 }
@@ -61,6 +62,15 @@ message CreatePsbtRequest {
 }
 
 message CreatePsbtResponse {
+  string response = 1;
+}
+
+message DrainPsbtRequest {
+  string address = 1;
+  uint64 feerate = 2;
+}
+
+message DrainPsbtResponse {
   string response = 1;
 }
 

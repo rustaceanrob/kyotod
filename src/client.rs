@@ -3,7 +3,7 @@ use bdk_wallet::bitcoin::address::NetworkUnchecked;
 use kyotod::{daemon_client::DaemonClient, StopRequest};
 use kyotod::{
     BalanceRequest, BroadcastPsbtRequest, CoinRequest, CreatePsbtRequest, DescriptorRequest,
-    IsMineRequest, ReceiveRequest,
+    DrainPsbtRequest, IsMineRequest, ReceiveRequest,
 };
 
 use clap::{Args, Parser, Subcommand};
@@ -32,6 +32,8 @@ enum Command {
     Coins(GetCoin),
     /// Create an unsigned bitcoin transaction.
     CreatePsbt(CreatePsbt),
+    /// Create a PSBT to move all funds in the wallet.
+    DrainWallet(DrainPsbt),
     /// Print the descriptors of the underlying wallet.
     Descriptors,
     /// Check if a Bitcoin address belongs to the wallet.
@@ -85,6 +87,14 @@ struct CreatePsbt {
     feerate: u64,
 }
 
+#[derive(Debug, Args)]
+struct DrainPsbt {
+    #[arg(long)]
+    recipient: Address<NetworkUnchecked>,
+    #[arg(long)]
+    feerate: u64,
+}
+
 #[derive(Args, Debug)]
 struct BroadcastPsbt {
     /// The path to a PSBT file.
@@ -126,6 +136,15 @@ async fn main() -> anyhow::Result<()> {
                 feerate,
             };
             let create_psbt_response = client.create_psbt(request).await?;
+            let response = create_psbt_response.into_inner().response;
+            println!("{response}");
+        }
+        Command::DrainWallet(DrainPsbt { recipient, feerate }) => {
+            let request = DrainPsbtRequest {
+                address: recipient.assume_checked().to_string(),
+                feerate,
+            };
+            let create_psbt_response = client.drain_psbt(request).await?;
             let response = create_psbt_response.into_inner().response;
             println!("{response}");
         }

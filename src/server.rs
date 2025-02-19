@@ -15,7 +15,8 @@ use kyotod::daemon_server::{Daemon, DaemonServer};
 use kyotod::{
     BalanceReply, BalanceRequest, BroadcastPsbtRequest, BroadcastPsbtResponse, CoinRequest,
     CoinResponse, CreatePsbtRequest, CreatePsbtResponse, DescriptorRequest, DescriptorResponse,
-    IsMineRequest, IsMineResponse, ReceiveRequest, ReceiveResponse, StopRequest, StopResponse,
+    DrainPsbtRequest, DrainPsbtResponse, IsMineRequest, IsMineResponse, ReceiveRequest,
+    ReceiveResponse, StopRequest, StopResponse,
 };
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
@@ -278,6 +279,58 @@ impl Daemon for WalletService {
         }))
     }
 
+    async fn drain_psbt(
+        &self,
+        request: Request<DrainPsbtRequest>,
+    ) -> Result<Response<DrainPsbtResponse>, Status> {
+        let req = request.into_inner();
+        let mut wallet_lock = self.wallet.lock().await;
+        let fee_rate = FeeRate::from_sat_per_vb(req.feerate)
+            .ok_or(Status::new(tonic::Code::Aborted, "Invalid fee rate"))?;
+        let address = Address::from_str(&req.address)
+            .map_err(|e| Status::new(tonic::Code::Aborted, format!("Invalid address {}", e)))?;
+        let address_checked = address
+            .require_network(wallet_lock.network())
+            .map_err(|e| Status::new(tonic::Code::Aborted, format!("Wrong network: {}", e)))?;
+        let psbt = {
+            let mut tx_builder = wallet_lock.build_tx();
+            tx_builder
+                .drain_wallet()
+                .drain_to(address_checked.script_pubkey())
+                .fee_rate(fee_rate);
+            tx_builder.finish().map_err(|e| {
+                Status::new(
+                    tonic::Code::Aborted,
+                    format!("Could not create PSBT: {}", e),
+                )
+            })?
+        };
+        let path = PathBuf::from(".").join("unsigned_transaction.psbt");
+        let mut file = std::fs::File::create(path).map_err(|e| {
+            Status::new(
+                tonic::Code::Aborted,
+                format!("Could not create file for PSBT {}", e),
+            )
+        })?;
+        psbt.serialize_to_writer(&mut file).map_err(|e| {
+            Status::new(
+                tonic::Code::Aborted,
+                format!("Could not write to file {}", e),
+            )
+        })?;
+        let mut conn = self.conn.lock().await;
+        if let Err(e) = wallet_lock.persist(&mut conn) {
+            tracing::warn!("Wallet database operation failed");
+            return Err(Status::new(
+                tonic::Code::Aborted,
+                format!("Datbase operation failed {}", e),
+            ));
+        }
+        Ok(Response::new(DrainPsbtResponse {
+            response: "Successfully created PSBT at `unsigned_transaction.psbt`".into(),
+        }))
+    }
+
     async fn descriptors(
         &self,
         _request: Request<DescriptorRequest>,
@@ -362,7 +415,7 @@ async fn main() -> anyhow::Result<()> {
         .descriptor(KeychainKind::External, Some(receive.clone()))
         .descriptor(KeychainKind::Internal, Some(change.clone()))
         .lookahead(lookahead)
-        .check_network(Network::Signet)
+        .check_network(network)
         .load_wallet(&mut conn)?;
 
     let wallet = match wallet_opt {

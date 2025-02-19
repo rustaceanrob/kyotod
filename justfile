@@ -9,7 +9,7 @@ check:
    cargo clippy --all-targets
 
 serve:
-  cargo run --bin server
+  cargo run --bin server --release
 
 help:
   cargo run --bin client help
