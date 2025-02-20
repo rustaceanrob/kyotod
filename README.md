@@ -35,7 +35,7 @@ cargo run --bin client stop
 
 ## Configuration
 
-Wallet configuration is done through the `wallet.toml` file in the root of this directory. The following tables describe the available configurations. 
+Wallet configuration is done through a `wallet.toml` file. The following tables describe the available configurations. 
 
 #### Global keys
 
@@ -62,7 +62,12 @@ Wallet configuration is done through the `wallet.toml` file in the root of this 
 
 The preferred workflow to issue most commands is by using `just`. Read more about [`just`](https://github.com/casey/just).
 
-All wallet data is stored within a `.wallet` folder contained in this directory.
+All wallet data is stored within a `.wallet` folder. By default, the server will store wallet data and search for the `wallet.toml` in the current working directory. If your `wallet.toml` is located at a different path, you may pass a working directory to the server using a CLI argument:
+
+
+```
+cargo run --bin server /path/to/toml/ --release
+```
 
 Once your node has synced to its peers, you may get information about your configured wallet by issuing commands from another terminal:
 

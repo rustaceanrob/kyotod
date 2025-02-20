@@ -391,14 +391,19 @@ impl Daemon for WalletService {
 async fn main() -> anyhow::Result<()> {
     let listen = "[::1]:50051".parse()?;
 
+    let mut args = std::env::args();
+    args.next();
+    let path = args.next().unwrap_or(".".into());
+    let mut root_dir = PathBuf::from(path);
     // General
-    let mut root_dir = PathBuf::from(".");
+    let wallet_toml_path = root_dir.clone().join("wallet.toml");
+    let wallet_toml = std::fs::read_to_string(wallet_toml_path)?;
+
     root_dir.push(".wallet");
     if !root_dir.exists() {
         std::fs::create_dir_all(&root_dir)?
     }
     // Wallet configs
-    let wallet_toml = std::fs::read_to_string("./wallet.toml")?;
     let wallet_config: WalletConfig = toml::from_str(&wallet_toml)?;
     let receive = wallet_config.wallet.receive;
     let change = wallet_config.wallet.change;
