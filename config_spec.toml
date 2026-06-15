@@ -1,0 +1,23 @@
+[[param]]
+name = "network"
+type = "String"
+default = "\"signet\".into()"
+doc = "Bitcoin network: bitcoin, signet, testnet, testnet4, regtest."
+
+[[param]]
+name = "datadir"
+type = "String"
+default = "\"~/.kyotod\".into()"
+doc = "Data directory holding wallets/ and data/."
+
+[[param]]
+name = "connect"
+type = "String"
+optional = true
+doc = "Connect only to this peer (ip:port or hostname:port)."
+
+[[param]]
+name = "daemon"
+type = "bool"
+default = "false"
+doc = "Fork into the background after startup."

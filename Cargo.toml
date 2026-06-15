@@ -1,0 +1,38 @@
+[package]
+name = "kyotod"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bdk_kyoto = "0.17.0"
+bdk_wallet = { version = "3.1.0", features = ["rusqlite"] }
+bip139 = { git = "https://github.com/rustaceanrob/bip139.git", rev = "db479ce2f56e2ad7757fa96253f376c03e19de9c" }
+capnp = "0.25.5"
+capnp-rpc = "0.25.1"
+clap = { version = "4", features = ["derive"] }
+configure_me = "0.4.0"
+crossterm = { version = "0.28", features = ["event-stream"] }
+futures = "0.3"
+libc = "0.2.186"
+qrcode = "0.14.1"
+ratatui = "0.29"
+tokio = { version = "1", features = ["signal"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+
+[build-dependencies]
+capnpc = "0.25"
+configure_me_codegen = "0.4.8"
+
+[package.metadata.configure_me]
+spec = "config_spec.toml"
+
+[[bin]]
+name = "kyotod"
+
+[[bin]]
+name = "cli"
+
+[[bin]]
+name = "tui"
