@@ -888,7 +888,7 @@ fn draw_wallet_list(f: &mut Frame<'_>, area: Rect, app: &App) {
         let msg = if app.last_error.is_some() {
             "(unreachable — see status bar)"
         } else {
-            "(no wallets — use `cli create <name> ...` or press `c` to add one)"
+            "(no wallets — press `c` to add one)"
         };
         f.render_widget(
             Paragraph::new(msg).style(Style::default().fg(Color::DarkGray)),

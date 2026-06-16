@@ -4,11 +4,10 @@
 > This software is entirely LLM generated and may contain bugs. Use at your own risk.
 
 A daemon-style wallet built around a BIP-157 compact-block-filter light client
-(via [`bdk_kyoto`](https://crates.io/crates/bdk_kyoto)), modeled after
-`bitcoind`/`bitcoin-cli`. Wallets are described as
+(via [`bdk_kyoto`](https://crates.io/crates/bdk_kyoto)). Wallets are described as
 [BIP-139](https://github.com/bitcoin/bips/blob/master/bip-0139.mediawiki)
 metadata backups and persisted to SQLite. A Cap'n Proto IPC server on a unix
-socket exposes the wallet surface to a thin `cli` client.
+socket exposes the wallet surface to a `tui` client.
 
 ## Dependencies
 
@@ -20,8 +19,7 @@ socket exposes the wallet surface to a thin `cli` client.
 | Binary       | Role                                                                                     |
 |--------------|------------------------------------------------------------------------------------------|
 | `kyotod`     | The daemon. Loads wallets, drives the light client, serves IPC.                          |
-| `cli`        | Command-line client over the IPC socket.                                                 |
-| `tui`        | Interactive terminal UI over the same IPC socket.                                        |
+| `tui`        | Interactive terminal UI over the IPC socket.                                             |
 
 
 ## Quick start
@@ -52,12 +50,6 @@ Each parameter can be set via CLI flag or environment variable:
 | `--connect <ADDR>`    | `KYOTOD_CONNECT`       | unset          | Optional `ip:port` or `host:port` for a single peer (skips DNS bootstrap).     |
 | `--daemon true`       | `KYOTOD_DAEMON`        | `false`        | Fork into the background after startup.                                        |
 
-`cli` only needs to know the socket location:
-
-```
-cargo run --bin cli [--datadir <PATH>] <subcommand> [args]
-```
-
 Default `--datadir` is `~/.kyotod`. The socket is always `<datadir>/node.sock`.
 
 ## Using the TUI
@@ -76,7 +68,7 @@ From the home screen:
 
 - **`c` create** — three-field form (name, external descriptor, change
   descriptor). The TUI builds a BIP-139 backup in-process and submits it
-  via `importWallet`. Same code path as `cli create`.
+  via `importWallet`.
 - **`i` import** — single-field path to a BIP-139 JSON file. `~/` is
   expanded.
 
