@@ -20,8 +20,8 @@ socket exposes the wallet surface to a thin `cli` client.
 | Binary       | Role                                                                                     |
 |--------------|------------------------------------------------------------------------------------------|
 | `kyotod`     | The daemon. Loads wallets, drives the light client, serves IPC.                          |
-| `cli`  | Command-line client over the IPC socket.                                                 |
-| `tui`  | Interactive terminal UI over the same IPC socket.                                        |
+| `cli`        | Command-line client over the IPC socket.                                                 |
+| `tui`        | Interactive terminal UI over the same IPC socket.                                        |
 
 
 ## Quick start
@@ -55,7 +55,7 @@ Each parameter can be set via CLI flag or environment variable:
 `cli` only needs to know the socket location:
 
 ```
-cli [--datadir <PATH>] <subcommand> [args]
+cargo run --bin cli [--datadir <PATH>] <subcommand> [args]
 ```
 
 Default `--datadir` is `~/.kyotod`. The socket is always `<datadir>/node.sock`.
@@ -66,34 +66,9 @@ Default `--datadir` is `~/.kyotod`. The socket is always `<datadir>/node.sock`.
 daemon, then:
 
 ```sh
-tui                          # default --datadir ~/.kyotod
-tui --datadir /path/to/dd
+cargo run --bin tui --release   # default --datadir ~/.kyotod
+cargo run --bin tui --release -- --datadir /path/to/dd
 ```
-
-If `kyotod` isn't reachable on the socket, the TUI prints an error and exits
-before entering raw mode, so your terminal stays clean.
-
-### Screens
-
-```
- wallets ──────────────────────┐
- * alice            12345 sats │   ←─ home: list of all wallets, * = active
-   bob                  0 sats │      poll refreshes every 2s
- ──────────────────────────────┘
-   height 247811   peers 1   active alice
-   j/k move  Enter open  c create  i import  a set-active  q quit   ? help
-```
-
-Press `Enter` on a wallet to drill into its detail screen — balance, recent
-canonical history (left), QR code of the receive address + the address text
-(right). `r` reveals a new address (advances the keychain by one), `s` opens
-the send form, `Esc` returns to the list.
-
-The send form has four fields (`recipient`, `sats`, `sat/vB`, `psbt out
-path`) and a `drain` toggle (`Alt+d`). `Tab` cycles, `Enter` submits. On
-success the result screen shows the PSBT path, txid, fee, and whether the
-wallet finalized the transaction. If `signed: yes`, `b` broadcasts the raw
-transaction over `broadcastTx`.
 
 ### Importing wallets
 
@@ -113,3 +88,7 @@ the new wallet set, and resumes syncing.
 - `?` toggles a centered overlay listing all keys for every screen.
 - `Esc` dismisses the help overlay or pops one level of navigation.
 - `q` quits from the home screen; `Ctrl-c` quits from anywhere.
+
+If `kyotod` isn't reachable on the socket, the TUI prints an error and exits
+before entering raw mode, so your terminal stays clean.
+
