@@ -38,20 +38,6 @@ Then launch the TUI.
 cargo run --bin tui --release
 ```
 
-## Configuration
-
-`kyotod` reads its config via [`configure_me`](https://crates.io/crates/configure_me).
-Each parameter can be set via CLI flag or environment variable:
-
-| Flag                  | Env                    | Default        | Notes                                                                          |
-|-----------------------|------------------------|----------------|--------------------------------------------------------------------------------|
-| `--network <N>`       | `KYOTOD_NETWORK`       | `signet`       | `bitcoin`, `signet`, `testnet`, `testnet4`, `regtest`.                         |
-| `--datadir <PATH>`    | `KYOTOD_DATADIR`       | `~/.kyotod`    | Holds wallets, sqlite stores, socket, pid file, log.                           |
-| `--connect <ADDR>`    | `KYOTOD_CONNECT`       | unset          | Optional `ip:port` or `host:port` for a single peer (skips DNS bootstrap).     |
-| `--daemon true`       | `KYOTOD_DAEMON`        | `false`        | Fork into the background after startup.                                        |
-
-Default `--datadir` is `~/.kyotod`. The socket is always `<datadir>/node.sock`.
-
 ## Using the TUI
 
 `tui` is an interactive front-end on the same unix socket. Start the
@@ -84,3 +70,16 @@ the new wallet set, and resumes syncing.
 If `kyotod` isn't reachable on the socket, the TUI prints an error and exits
 before entering raw mode, so your terminal stays clean.
 
+## Configuration
+
+`kyotod` reads its config via [`configure_me`](https://crates.io/crates/configure_me).
+Each parameter can be set via CLI flag or environment variable:
+
+| Flag                  | Env                    | Default        | Notes                                                                          |
+|-----------------------|------------------------|----------------|--------------------------------------------------------------------------------|
+| `--network <N>`       | `KYOTOD_NETWORK`       | `signet`       | `bitcoin`, `signet`, `testnet`, `testnet4`, `regtest`.                         |
+| `--datadir <PATH>`    | `KYOTOD_DATADIR`       | `~/.kyotod`    | Holds wallets, sqlite stores, socket, pid file, log.                           |
+| `--connect <ADDR>`    | `KYOTOD_CONNECT`       | unset          | Optional `ip:port` or `host:port` for a single peer (skips DNS bootstrap).     |
+| `--daemon true`       | `KYOTOD_DAEMON`        | `false`        | Fork into the background after startup.                                        |
+
+Default `--datadir` is `~/.kyotod`. The socket is always `<datadir>/node.sock`.
