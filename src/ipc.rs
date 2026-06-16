@@ -9,6 +9,7 @@ use bdk_kyoto::bip157::tokio;
 use bdk_kyoto::Requester;
 use bdk_wallet::bitcoin::consensus::{self, Decodable};
 use bdk_wallet::bitcoin::{Address, Amount, FeeRate, Transaction};
+use bdk_wallet::chain::ChainPosition;
 use bdk_wallet::{KeychainKind, SignOptions};
 use bip139::WalletBackup;
 use tokio::net::UnixListener;
@@ -251,12 +252,32 @@ impl server_capnp::server::Server for IpcInterface {
         let entry = state
             .active_entry()
             .ok_or_else(|| failed("no active wallet"))?;
-        let text = entry
+        let mut rows: Vec<(i64, String)> = entry
             .wallet
             .transactions()
-            .map(|t| format!("{} {:?}", t.tx_node.txid, t.chain_position))
-            .collect::<Vec<_>>()
-            .join("\n");
+            .map(|t| {
+                let (sent, received) = entry.wallet.sent_and_received(&t.tx_node.tx);
+                let net = received.to_sat() as i64 - sent.to_sat() as i64;
+                let (dir, amt) = if net >= 0 {
+                    ("recv", net)
+                } else {
+                    ("sent", -net)
+                };
+                let txid = t.tx_node.txid.to_string();
+                let short = format!("{}…{}", &txid[..8], &txid[txid.len() - 4..]);
+                let when = match &t.chain_position {
+                    ChainPosition::Confirmed { anchor, .. } => format!("block {}", anchor.block_id.height),
+                    ChainPosition::Unconfirmed { .. } => "unconfirmed".to_string(),
+                };
+                let sort_key = match &t.chain_position {
+                    ChainPosition::Confirmed { anchor, .. } => -(anchor.block_id.height as i64),
+                    ChainPosition::Unconfirmed { .. } => i64::MIN,
+                };
+                (sort_key, format!("{dir}  {amt:>12} sats   {short}   {when}"))
+            })
+            .collect();
+        rows.sort_by_key(|(k, _)| *k);
+        let text = rows.into_iter().map(|(_, s)| s).collect::<Vec<_>>().join("\n");
         results.get().set_entries(text.as_str());
         Ok(())
     }

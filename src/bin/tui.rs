@@ -850,10 +850,10 @@ fn draw_title(f: &mut Frame<'_>, area: Rect, app: &App) {
 fn draw_wallets(f: &mut Frame<'_>, area: Rect, app: &App) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(area);
-    draw_sync_gauge(f, rows[0], app);
-    draw_wallet_list(f, rows[1], app);
+    draw_wallet_list(f, rows[0], app);
+    draw_sync_gauge(f, rows[1], app);
 }
 
 fn draw_sync_gauge(f: &mut Frame<'_>, area: Rect, app: &App) {
