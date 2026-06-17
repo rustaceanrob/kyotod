@@ -1,13 +1,16 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use bdk_kyoto::builder::{Builder, BuilderExt};
 use bdk_kyoto::{
-    bip157::tokio, wallets, Info, Receiver, Requester, ScanType, UnboundedReceiver, Update,
-    UpdateSubscriber, Warning,
+    bip157::tokio, wallets, Info, Receiver, Requester, ScanType, TrustedPeer, UnboundedReceiver,
+    Update, UpdateSubscriber, Warning,
 };
 
 pub type ProgressSlot = Arc<Mutex<Option<f32>>>;
+pub type RequiredPeers = Arc<Mutex<u8>>;
+pub type TrustedPeers = Arc<Mutex<Vec<SocketAddr>>>;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::chain::{DescriptorExt, DescriptorId};
 use bdk_wallet::KeychainKind;
@@ -27,6 +30,8 @@ pub fn spawn(
     state: Arc<Mutex<State>>,
     scan_overrides: HashMap<String, ScanType>,
     progress: ProgressSlot,
+    required_peers: RequiredPeers,
+    trusted_peers: TrustedPeers,
 ) -> SyncHandle {
     let client = {
         let guard = state.lock().unwrap();
@@ -44,8 +49,17 @@ pub fn spawn(
                 (&*w.wallet, scan)
             })
             .collect();
-        Builder::new(network)
-            .build_with_wallets(wallets)
+        let mut b = Builder::new(network).required_peers(*required_peers.lock().unwrap());
+        let trusted: Vec<TrustedPeer> = trusted_peers
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|s| TrustedPeer::from(*s))
+            .collect();
+        if !trusted.is_empty() {
+            b = b.add_peers(trusted);
+        }
+        b.build_with_wallets(wallets)
             .expect("failed to build light client")
     };
 

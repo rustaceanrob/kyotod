@@ -21,4 +21,7 @@ interface Server {
         -> (path :Text, signed :Bool, txid :Text, rawTx :Data, feeSats :UInt64);
     importWallet @11 (json :Text) -> (ok :Bool, name :Text, message :Text);
     syncProgress @12 () -> (percent :Float32, hasData :Bool);
+    addPeer @13 (ip :Text, port :UInt16) -> (ok :Bool, message :Text);
+    setRequiredPeers @14 (num :UInt8) -> (ok :Bool, message :Text);
+    getRequiredPeers @15 () -> (num :UInt8);
 }

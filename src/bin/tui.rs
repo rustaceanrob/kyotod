@@ -43,6 +43,7 @@ enum Screen {
     Result,
     Create,
     Import,
+    Network,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -91,8 +92,17 @@ struct App {
     form: SendForm,
     create: CreateForm,
     import: ImportForm,
+    network: NetworkForm,
+    required_peers: Option<u8>,
     // Result of the most recent buildTransaction.
     result: Option<BuildResult>,
+}
+
+#[derive(Default)]
+struct NetworkForm {
+    ip: String,
+    port: String,
+    focus: u8, // 0=ip, 1=port
 }
 
 #[derive(Default)]
@@ -177,6 +187,9 @@ impl App {
         if snap.progress.is_some() {
             self.progress = snap.progress;
         }
+        if snap.required_peers.is_some() {
+            self.required_peers = snap.required_peers;
+        }
         if let Some(e) = snap.error {
             self.last_error = Some(e);
         }
@@ -189,6 +202,7 @@ struct Snapshot {
     height: Option<u32>,
     peer_count: Option<usize>,
     progress: Option<f32>,
+    required_peers: Option<u8>,
     error: Option<String>,
 }
 
@@ -209,6 +223,10 @@ enum Action {
     SubmitCreate,
     SubmitImport,
     ShutdownDaemon,
+    OpenNetwork,
+    AddPeer,
+    IncreasePeers,
+    DecreasePeers,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -400,6 +418,63 @@ async fn dispatch(app: &mut App, action: Action, client: &server::Client) {
             }
             Err(e) => app.last_error = Some(e),
         },
+        Action::OpenNetwork => {
+            app.network = NetworkForm::default();
+            app.last_error = None;
+            app.last_info = None;
+            app.push(Screen::Network);
+        }
+        Action::AddPeer => {
+            let ip = app.network.ip.trim().to_string();
+            if ip.is_empty() {
+                app.last_error = Some("ip required".into());
+                return;
+            }
+            let port: u16 = if app.network.port.trim().is_empty() {
+                0
+            } else {
+                match app.network.port.trim().parse() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        app.last_error = Some(format!("port: {e}"));
+                        return;
+                    }
+                }
+            };
+            let mut req = client.add_peer_request();
+            req.get().set_ip(ip.as_str());
+            req.get().set_port(port);
+            match req.send().promise.await {
+                Ok(resp) => match resp.get() {
+                    Ok(r) => {
+                        let msg = r
+                            .get_message()
+                            .ok()
+                            .and_then(|t| t.to_string().ok())
+                            .unwrap_or_default();
+                        if r.get_ok() {
+                            app.last_info = Some(msg);
+                            app.last_error = None;
+                            app.network = NetworkForm::default();
+                        } else {
+                            app.last_error = Some(msg);
+                        }
+                    }
+                    Err(e) => app.last_error = Some(format!("add-peer: {e}")),
+                },
+                Err(e) => app.last_error = Some(format!("add-peer: {}", clean(&e.to_string()))),
+            }
+        }
+        Action::IncreasePeers => {
+            let cur = app.required_peers.unwrap_or(1);
+            let next = (cur.saturating_add(1)).min(15);
+            send_required_peers(app, client, next).await;
+        }
+        Action::DecreasePeers => {
+            let cur = app.required_peers.unwrap_or(1);
+            let next = cur.saturating_sub(1).max(1);
+            send_required_peers(app, client, next).await;
+        }
         Action::ShutdownDaemon => {
             match client.shutdown_request().send().promise.await {
                 Ok(_) => app.quit = true,
@@ -435,6 +510,33 @@ async fn dispatch(app: &mut App, action: Action, client: &server::Client) {
                     }
                 }
             }
+        }
+    }
+}
+
+async fn send_required_peers(app: &mut App, client: &server::Client, n: u8) {
+    let mut req = client.set_required_peers_request();
+    req.get().set_num(n);
+    match req.send().promise.await {
+        Ok(resp) => match resp.get() {
+            Ok(r) => {
+                let msg = r
+                    .get_message()
+                    .ok()
+                    .and_then(|t| t.to_string().ok())
+                    .unwrap_or_default();
+                if r.get_ok() {
+                    app.required_peers = Some(n);
+                    app.last_info = Some(msg);
+                    app.last_error = None;
+                } else {
+                    app.last_error = Some(msg);
+                }
+            }
+            Err(e) => app.last_error = Some(format!("set-required-peers: {e}")),
+        },
+        Err(e) => {
+            app.last_error = Some(format!("set-required-peers: {}", clean(&e.to_string())))
         }
     }
 }
@@ -647,6 +749,11 @@ async fn poll(client: &server::Client) -> Snapshot {
             }
         }
     }
+    if let Ok(resp) = client.get_required_peers_request().send().promise.await {
+        if let Ok(r) = resp.get() {
+            snap.required_peers = Some(r.get_num());
+        }
+    }
     snap
 }
 
@@ -671,7 +778,7 @@ fn handle_event(app: &mut App, event: Event) -> Action {
     }
     let on_form = matches!(
         app.screen(),
-        Screen::Send | Screen::Create | Screen::Import
+        Screen::Send | Screen::Create | Screen::Import | Screen::Network
     );
     if !on_form && key.code == KeyCode::Char('u') {
         app.unit = app.unit.toggle();
@@ -711,6 +818,7 @@ fn handle_event(app: &mut App, event: Event) -> Action {
             KeyCode::Char('a') => Action::SetActive,
             KeyCode::Char('c') => Action::OpenCreate,
             KeyCode::Char('i') => Action::OpenImport,
+            KeyCode::Char('n') => Action::OpenNetwork,
             KeyCode::Char('X') => {
                 app.confirm_shutdown = true;
                 Action::None
@@ -727,6 +835,7 @@ fn handle_event(app: &mut App, event: Event) -> Action {
         Screen::Send => handle_send(app, key),
         Screen::Create => handle_create(app, key),
         Screen::Import => handle_import(app, key),
+        Screen::Network => handle_network(app, key),
         Screen::Result => match key.code {
             KeyCode::Esc | KeyCode::Char('q') => Action::Back,
             KeyCode::Char('b') => Action::Broadcast,
@@ -765,6 +874,39 @@ fn create_field_mut(form: &mut CreateForm) -> &mut String {
         1 => &mut form.external,
         2 => &mut form.change,
         _ => &mut form.birthday,
+    }
+}
+
+fn handle_network(app: &mut App, key: crossterm::event::KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => Action::Back,
+        KeyCode::Enter => Action::AddPeer,
+        KeyCode::Tab => {
+            app.network.focus = (app.network.focus + 1) % 2;
+            Action::None
+        }
+        KeyCode::BackTab => {
+            app.network.focus = (app.network.focus + 1) % 2;
+            Action::None
+        }
+        KeyCode::Char('+') | KeyCode::Char('=') => Action::IncreasePeers,
+        KeyCode::Char('-') | KeyCode::Char('_') => Action::DecreasePeers,
+        KeyCode::Backspace => {
+            network_field_mut(&mut app.network).pop();
+            Action::None
+        }
+        KeyCode::Char(c) => {
+            network_field_mut(&mut app.network).push(c);
+            Action::None
+        }
+        _ => Action::None,
+    }
+}
+
+fn network_field_mut(form: &mut NetworkForm) -> &mut String {
+    match form.focus {
+        0 => &mut form.ip,
+        _ => &mut form.port,
     }
 }
 
@@ -842,6 +984,7 @@ fn draw(f: &mut Frame<'_>, app: &App) {
         Screen::Result => draw_result(f, chunks[1], app),
         Screen::Create => draw_create(f, chunks[1], app),
         Screen::Import => draw_import(f, chunks[1], app),
+        Screen::Network => draw_network(f, chunks[1], app),
     }
     draw_status(f, chunks[2], app);
     draw_keys(f, chunks[3], app);
@@ -932,6 +1075,7 @@ fn draw_title(f: &mut Frame<'_>, area: Rect, app: &App) {
         Screen::Result => " tui  result ",
         Screen::Create => " tui  create wallet ",
         Screen::Import => " tui  import wallet ",
+        Screen::Network => " tui  network ",
     };
     let p = Paragraph::new(Span::styled(
         label,
@@ -1228,7 +1372,7 @@ fn draw_keys(f: &mut Frame<'_>, area: Rect, app: &App) {
         Screen::Wallets => vec![
             key(" j/k "), text("move "), key("Enter "), text("open "),
             key("c "), text("create "), key("i "), text("import "),
-            key("a "), text("set-active "), key("X "), text("shutdown "), key("q "), text("quit"),
+            key("a "), text("set-active "), key("n "), text("network "), key("X "), text("shutdown "), key("q "), text("quit"),
         ],
         Screen::Wallet => vec![
             key(" r "), text("reveal "), key("s "), text("send "),
@@ -1248,9 +1392,16 @@ fn draw_keys(f: &mut Frame<'_>, area: Rect, app: &App) {
         Screen::Import => vec![
             key(" Enter "), text("submit "), key("Esc "), text("back"),
         ],
+        Screen::Network => vec![
+            key(" +/- "), text("required peers "), key("Tab "), text("next field "),
+            key("Enter "), text("add peer "), key("Esc "), text("back"),
+        ],
     };
     spans.push(text("   "));
-    if !matches!(app.screen(), Screen::Send | Screen::Create | Screen::Import) {
+    if !matches!(
+        app.screen(),
+        Screen::Send | Screen::Create | Screen::Import | Screen::Network
+    ) {
         spans.push(key("u "));
         spans.push(text(match app.unit {
             Unit::Sats => "→BTC ",
@@ -1325,6 +1476,61 @@ fn draw_create(f: &mut Frame<'_>, area: Rect, app: &App) {
     )))
     .wrap(Wrap { trim: false });
     f.render_widget(hint, rows[4]);
+}
+
+fn draw_network(f: &mut Frame<'_>, area: Rect, app: &App) {
+    let block = Block::default().borders(Borders::ALL).title(" network ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Length(2),
+            Constraint::Length(2),
+            Constraint::Min(0),
+        ])
+        .split(inner);
+
+    let required = app
+        .required_peers
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "—".into());
+    let connected = app
+        .peer_count
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "—".into());
+    let summary = vec![
+        Line::from(vec![
+            Span::styled("required peers: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(required, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw("   "),
+            Span::styled("connected: ", Style::default().fg(Color::DarkGray)),
+            Span::raw(connected),
+        ]),
+        Line::from(Span::styled(
+            "press + / - to change required peers (range 1..=15; triggers a light-client rebuild)",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    f.render_widget(Paragraph::new(summary).wrap(Wrap { trim: false }), rows[0]);
+
+    draw_field(f, rows[1], "peer ip", &app.network.ip, app.network.focus == 0);
+    draw_field(
+        f,
+        rows[2],
+        "port (blank = default for network)",
+        &app.network.port,
+        app.network.focus == 1,
+    );
+
+    let hint = Paragraph::new(Line::from(Span::styled(
+        "Tab moves between fields. Enter adds the peer to the active light client (and to the rebuild whitelist).",
+        Style::default().fg(Color::DarkGray),
+    )))
+    .wrap(Wrap { trim: false });
+    f.render_widget(hint, rows[3]);
 }
 
 fn draw_import(f: &mut Frame<'_>, area: Rect, app: &App) {

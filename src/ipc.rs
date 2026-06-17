@@ -19,7 +19,7 @@ use tracing::{debug, error};
 
 use crate::paths::Layout;
 use crate::server_capnp;
-use crate::sync::ProgressSlot;
+use crate::sync::{ProgressSlot, RequiredPeers, TrustedPeers};
 use crate::wallet::{self, State};
 
 pub type RequesterSlot = Arc<Mutex<Option<Requester>>>;
@@ -30,6 +30,8 @@ pub struct IpcInterface {
     state: Arc<Mutex<State>>,
     requester: RequesterSlot,
     progress: ProgressSlot,
+    required_peers: RequiredPeers,
+    trusted_peers: TrustedPeers,
     layout: Arc<Layout>,
     network: bdk_wallet::bitcoin::Network,
 }
@@ -41,6 +43,8 @@ impl IpcInterface {
         state: Arc<Mutex<State>>,
         requester: RequesterSlot,
         progress: ProgressSlot,
+        required_peers: RequiredPeers,
+        trusted_peers: TrustedPeers,
         layout: Arc<Layout>,
         network: bdk_wallet::bitcoin::Network,
     ) -> Self {
@@ -50,6 +54,8 @@ impl IpcInterface {
             state,
             requester,
             progress,
+            required_peers,
+            trusted_peers,
             layout,
             network,
         }
@@ -83,6 +89,8 @@ pub struct ServerArgs {
     pub state: Arc<Mutex<State>>,
     pub requester: RequesterSlot,
     pub progress: ProgressSlot,
+    pub required_peers: RequiredPeers,
+    pub trusted_peers: TrustedPeers,
 }
 
 pub fn spawn_server(args: ServerArgs) {
@@ -131,6 +139,8 @@ async fn accept_loop(args: ServerArgs) {
             args.state.clone(),
             args.requester.clone(),
             args.progress.clone(),
+            args.required_peers.clone(),
+            args.trusted_peers.clone(),
             args.layout.clone(),
             args.network,
         );
@@ -492,6 +502,86 @@ impl server_capnp::server::Server for IpcInterface {
             )
             .as_str(),
         );
+        Ok(())
+    }
+
+    async fn add_peer(
+        self: capnp::capability::Rc<Self>,
+        params: server_capnp::server::AddPeerParams,
+        mut results: server_capnp::server::AddPeerResults,
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let ip_str = p.get_ip()?.to_string()?;
+        let port = p.get_port();
+        let ip: std::net::IpAddr = ip_str
+            .parse()
+            .map_err(|e| failed(format!("invalid ip '{ip_str}': {e}")))?;
+        let port = if port == 0 {
+            match self.network {
+                bdk_wallet::bitcoin::Network::Bitcoin => 8333,
+                bdk_wallet::bitcoin::Network::Testnet => 18333,
+                bdk_wallet::bitcoin::Network::Signet => 38333,
+                bdk_wallet::bitcoin::Network::Regtest => 18444,
+                _ => 8333,
+            }
+        } else {
+            port
+        };
+        let sock = std::net::SocketAddr::new(ip, port);
+        self.trusted_peers.lock().unwrap().push(sock);
+        let mut r = results.get();
+        match self.requester() {
+            Ok(req) => match req.add_peer(sock) {
+                Ok(()) => {
+                    r.set_ok(true);
+                    r.set_message(format!("added peer {sock}").as_str());
+                }
+                Err(e) => {
+                    r.set_ok(false);
+                    r.set_message(format!("add_peer: {e}").as_str());
+                }
+            },
+            Err(_) => {
+                r.set_ok(true);
+                r.set_message(
+                    format!("queued peer {sock}; will connect when node starts").as_str(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    async fn set_required_peers(
+        self: capnp::capability::Rc<Self>,
+        params: server_capnp::server::SetRequiredPeersParams,
+        mut results: server_capnp::server::SetRequiredPeersResults,
+    ) -> Result<(), capnp::Error> {
+        let n = params.get()?.get_num();
+        let clamped = n.clamp(1, 15);
+        *self.required_peers.lock().unwrap() = clamped;
+        let mut r = results.get();
+        if self.requester.lock().unwrap().is_some() {
+            if let Err(e) = self.rebuild_tx.send(()).await {
+                r.set_ok(false);
+                r.set_message(format!("rebuild signal: {e}").as_str());
+                return Ok(());
+            }
+            r.set_ok(true);
+            r.set_message(format!("required peers set to {clamped}; rebuilding").as_str());
+        } else {
+            r.set_ok(true);
+            r.set_message(format!("required peers set to {clamped}").as_str());
+        }
+        Ok(())
+    }
+
+    async fn get_required_peers(
+        self: capnp::capability::Rc<Self>,
+        _: server_capnp::server::GetRequiredPeersParams,
+        mut results: server_capnp::server::GetRequiredPeersResults,
+    ) -> Result<(), capnp::Error> {
+        let n = *self.required_peers.lock().unwrap();
+        results.get().set_num(n);
         Ok(())
     }
 }

@@ -8,7 +8,7 @@ use bdk_wallet::bitcoin::Network;
 use kyotod::daemonize::Daemonize;
 use kyotod::ipc::{self, RequesterSlot, ServerArgs};
 use kyotod::paths::Layout;
-use kyotod::sync::{self, ProgressSlot, SyncHandle};
+use kyotod::sync::{self, ProgressSlot, RequiredPeers, SyncHandle, TrustedPeers};
 use kyotod::wallet::State;
 use tokio::signal::unix::{signal, SignalKind};
 use tracing::{info, warn};
@@ -71,6 +71,8 @@ async fn run(config: Config, network: Network, layout: Arc<Layout>) {
     }
 
     let progress: ProgressSlot = Arc::new(Mutex::new(None));
+    let required_peers: RequiredPeers = Arc::new(Mutex::new(1));
+    let trusted_peers: TrustedPeers = Arc::new(Mutex::new(Vec::new()));
     let mut handle: Option<SyncHandle> = if state.lock().unwrap().wallets.is_empty() {
         info!(target: "node", "no wallets present; waiting for import");
         None
@@ -80,6 +82,8 @@ async fn run(config: Config, network: Network, layout: Arc<Layout>) {
             state.clone(),
             HashMap::new(),
             progress.clone(),
+            required_peers.clone(),
+            trusted_peers.clone(),
         ))
     };
     let requester_slot: RequesterSlot =
@@ -95,6 +99,8 @@ async fn run(config: Config, network: Network, layout: Arc<Layout>) {
         state: state.clone(),
         requester: requester_slot.clone(),
         progress: progress.clone(),
+        required_peers: required_peers.clone(),
+        trusted_peers: trusted_peers.clone(),
     });
 
     let mut sigint = signal(SignalKind::interrupt()).expect("register SIGINT handler");
@@ -112,7 +118,14 @@ async fn run(config: Config, network: Network, layout: Arc<Layout>) {
                 if let Some(h) = handle.take() {
                     sync::shutdown(h).await;
                 }
-                let h = sync::spawn(network, state.clone(), scans, progress.clone());
+                let h = sync::spawn(
+                    network,
+                    state.clone(),
+                    scans,
+                    progress.clone(),
+                    required_peers.clone(),
+                    trusted_peers.clone(),
+                );
                 *requester_slot.lock().unwrap() = Some(h.requester.clone());
                 handle = Some(h);
                 info!(target: "node", "light client rebuilt");
