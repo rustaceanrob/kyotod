@@ -8,7 +8,7 @@ use std::str::FromStr;
 use bdk_kyoto::bip157::tokio;
 use bdk_kyoto::Requester;
 use bdk_wallet::bitcoin::consensus::{self, Decodable};
-use bdk_wallet::bitcoin::{Address, Amount, FeeRate, Transaction};
+use bdk_wallet::bitcoin::{Address, Amount, FeeRate, Psbt, Transaction};
 use bdk_wallet::chain::ChainPosition;
 use bdk_wallet::{KeychainKind, SignOptions};
 use bip139::WalletBackup;
@@ -300,6 +300,54 @@ impl server_capnp::server::Server for IpcInterface {
         let mut raw = params.get()?.get_tx()?;
         let tx = Transaction::consensus_decode(&mut raw)
             .map_err(|e| failed(format!("decode tx: {e}")))?;
+        let txid = tx.compute_txid().to_string();
+        self.requester()?
+            .submit_package(tx)
+            .await
+            .map_err(|e| failed(format!("broadcast: {e}")))?;
+        results.get().set_txid(txid.as_str());
+        Ok(())
+    }
+
+    async fn broadcast_psbt(
+        self: capnp::capability::Rc<Self>,
+        params: server_capnp::server::BroadcastPsbtParams,
+        mut results: server_capnp::server::BroadcastPsbtResults,
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let path_arg = p.get_path()?.to_string()?;
+        let finalize = p.get_finalize();
+        let path = if path_arg.is_empty() {
+            self.layout.root.join("tx.psbt")
+        } else {
+            PathBuf::from(path_arg)
+        };
+        let bytes = std::fs::read(&path)
+            .map_err(|e| failed(format!("read {}: {e}", path.display())))?;
+        let mut psbt = Psbt::deserialize(&bytes)
+            .map_err(|e| failed(format!("decode psbt: {e}")))?;
+        if finalize {
+            let mut state = self.state.lock().unwrap();
+            let entry = state
+                .active_entry_mut()
+                .ok_or_else(|| failed("no active wallet"))?;
+            let done = entry
+                .wallet
+                .sign(
+                    &mut psbt,
+                    SignOptions {
+                        try_finalize: true,
+                        ..SignOptions::default()
+                    },
+                )
+                .map_err(|e| failed(format!("finalize: {e}")))?;
+            if !done {
+                return Err(failed("psbt not fully signed after finalize attempt"));
+            }
+        }
+        let tx = psbt
+            .extract_tx()
+            .map_err(|e| failed(format!("extract: {e}")))?;
         let txid = tx.compute_txid().to_string();
         self.requester()?
             .submit_package(tx)

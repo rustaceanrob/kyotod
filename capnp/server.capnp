@@ -25,4 +25,5 @@ interface Server {
     setRequiredPeers @14 (num :UInt8) -> (ok :Bool, message :Text);
     getRequiredPeers @15 () -> (num :UInt8);
     network @16 () -> (name :Text);
+    broadcastPsbt @17 (path :Text, finalize :Bool) -> (txid :Text);
 }

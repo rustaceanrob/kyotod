@@ -44,6 +44,7 @@ enum Screen {
     Create,
     Import,
     Network,
+    Broadcast,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +95,7 @@ struct App {
     create: CreateForm,
     import: ImportForm,
     network: NetworkForm,
+    broadcast: BroadcastForm,
     required_peers: Option<u8>,
     // Result of the most recent buildTransaction.
     result: Option<BuildResult>,
@@ -118,6 +120,13 @@ struct CreateForm {
 #[derive(Default)]
 struct ImportForm {
     path: String,
+}
+
+#[derive(Default)]
+struct BroadcastForm {
+    path: String,
+    finalize: bool,
+    last_txid: Option<String>,
 }
 
 struct WalletRow {
@@ -223,6 +232,8 @@ enum Action {
     OpenSend,
     SubmitSend,
     Broadcast,
+    OpenBroadcast,
+    SubmitBroadcast,
     OpenCreate,
     OpenImport,
     SubmitCreate,
@@ -428,6 +439,31 @@ async fn dispatch(app: &mut App, action: Action, client: &server::Client) {
             app.last_error = None;
             app.last_info = None;
             app.push(Screen::Network);
+        }
+        Action::OpenBroadcast => {
+            app.broadcast = BroadcastForm::default();
+            app.last_error = None;
+            app.last_info = None;
+            app.push(Screen::Broadcast);
+        }
+        Action::SubmitBroadcast => {
+            let mut req = client.broadcast_psbt_request();
+            req.get().set_path(app.broadcast.path.trim());
+            req.get().set_finalize(app.broadcast.finalize);
+            match req.send().promise.await {
+                Ok(resp) => match resp.get().and_then(|r| r.get_txid()) {
+                    Ok(t) => {
+                        let txid = t.to_string().unwrap_or_default();
+                        app.broadcast.last_txid = Some(txid.clone());
+                        app.last_info = Some(format!("broadcast {txid}"));
+                        app.last_error = None;
+                    }
+                    Err(e) => app.last_error = Some(format!("broadcast: {e}")),
+                },
+                Err(e) => {
+                    app.last_error = Some(format!("broadcast: {}", clean(&e.to_string())))
+                }
+            }
         }
         Action::AddPeer => {
             let ip = app.network.ip.trim().to_string();
@@ -790,7 +826,7 @@ fn handle_event(app: &mut App, event: Event) -> Action {
     }
     let on_form = matches!(
         app.screen(),
-        Screen::Send | Screen::Create | Screen::Import | Screen::Network
+        Screen::Send | Screen::Create | Screen::Import | Screen::Network | Screen::Broadcast
     );
     if !on_form && key.code == KeyCode::Char('u') {
         app.unit = app.unit.toggle();
@@ -831,6 +867,7 @@ fn handle_event(app: &mut App, event: Event) -> Action {
             KeyCode::Char('c') => Action::OpenCreate,
             KeyCode::Char('i') => Action::OpenImport,
             KeyCode::Char('n') => Action::OpenNetwork,
+            KeyCode::Char('b') => Action::OpenBroadcast,
             KeyCode::Char('X') => {
                 app.confirm_shutdown = true;
                 Action::None
@@ -848,6 +885,7 @@ fn handle_event(app: &mut App, event: Event) -> Action {
         Screen::Create => handle_create(app, key),
         Screen::Import => handle_import(app, key),
         Screen::Network => handle_network(app, key),
+        Screen::Broadcast => handle_broadcast(app, key),
         Screen::Result => match key.code {
             KeyCode::Esc | KeyCode::Char('q') => Action::Back,
             KeyCode::Char('b') => Action::Broadcast,
@@ -886,6 +924,26 @@ fn create_field_mut(form: &mut CreateForm) -> &mut String {
         1 => &mut form.external,
         2 => &mut form.change,
         _ => &mut form.birthday,
+    }
+}
+
+fn handle_broadcast(app: &mut App, key: crossterm::event::KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => Action::Back,
+        KeyCode::Enter => Action::SubmitBroadcast,
+        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
+            app.broadcast.finalize = !app.broadcast.finalize;
+            Action::None
+        }
+        KeyCode::Backspace => {
+            app.broadcast.path.pop();
+            Action::None
+        }
+        KeyCode::Char(c) => {
+            app.broadcast.path.push(c);
+            Action::None
+        }
+        _ => Action::None,
     }
 }
 
@@ -997,6 +1055,7 @@ fn draw(f: &mut Frame<'_>, app: &App) {
         Screen::Create => draw_create(f, chunks[1], app),
         Screen::Import => draw_import(f, chunks[1], app),
         Screen::Network => draw_network(f, chunks[1], app),
+        Screen::Broadcast => draw_broadcast(f, chunks[1], app),
     }
     draw_status(f, chunks[2], app);
     draw_keys(f, chunks[3], app);
@@ -1088,6 +1147,7 @@ fn draw_title(f: &mut Frame<'_>, area: Rect, app: &App) {
         Screen::Create => " tui  create wallet ",
         Screen::Import => " tui  import wallet ",
         Screen::Network => " tui  network ",
+        Screen::Broadcast => " tui  broadcast ",
     };
     let p = Paragraph::new(Span::styled(
         label,
@@ -1391,7 +1451,9 @@ fn draw_keys(f: &mut Frame<'_>, area: Rect, app: &App) {
         Screen::Wallets => vec![
             key(" j/k "), text("move "), key("Enter "), text("open "),
             key("c "), text("create "), key("i "), text("import "),
-            key("a "), text("set-active "), key("n "), text("network "), key("X "), text("shutdown "), key("q "), text("quit"),
+            key("a "), text("set-active "), key("n "), text("network "),
+            key("b "), text("broadcast "),
+            key("X "), text("shutdown "), key("q "), text("quit"),
         ],
         Screen::Wallet => vec![
             key(" r "), text("reveal "), key("s "), text("send "),
@@ -1415,11 +1477,15 @@ fn draw_keys(f: &mut Frame<'_>, area: Rect, app: &App) {
             key(" +/- "), text("required peers "), key("Tab "), text("next field "),
             key("Enter "), text("add peer "), key("Esc "), text("back"),
         ],
+        Screen::Broadcast => vec![
+            key(" Enter "), text("broadcast "), key("Alt+f "), text("toggle finalize "),
+            key("Esc "), text("back"),
+        ],
     };
     spans.push(text("   "));
     if !matches!(
         app.screen(),
-        Screen::Send | Screen::Create | Screen::Import | Screen::Network
+        Screen::Send | Screen::Create | Screen::Import | Screen::Network | Screen::Broadcast
     ) {
         spans.push(key("u "));
         spans.push(text(match app.unit {
@@ -1566,6 +1632,42 @@ fn draw_import(f: &mut Frame<'_>, area: Rect, app: &App) {
         Style::default().fg(Color::DarkGray),
     )));
     f.render_widget(hint, rows[1]);
+}
+
+fn draw_broadcast(f: &mut Frame<'_>, area: Rect, app: &App) {
+    let block = Block::default().borders(Borders::ALL).title(" broadcast psbt ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(inner);
+    draw_wrapped_field(
+        f,
+        rows[0],
+        "psbt path (default <datadir>/tx.psbt)",
+        &app.broadcast.path,
+        true,
+    );
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "Reads a signed PSBT, extracts the finalized tx, and broadcasts it.",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(vec![
+            Span::styled("finalize: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                if app.broadcast.finalize { "on" } else { "off" },
+                Style::default().fg(if app.broadcast.finalize { Color::Green } else { Color::DarkGray }),
+            ),
+            Span::styled("   (Alt+f to toggle)", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+    if let Some(t) = &app.broadcast.last_txid {
+        lines.push(Line::from(""));
+        lines.push(Line::from(format!("broadcast: {t}")));
+    }
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), rows[1]);
 }
 
 fn draw_wrapped_field(f: &mut Frame<'_>, area: Rect, label: &str, value: &str, focused: bool) {
