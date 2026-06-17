@@ -575,6 +575,22 @@ impl server_capnp::server::Server for IpcInterface {
         Ok(())
     }
 
+    async fn network(
+        self: capnp::capability::Rc<Self>,
+        _: server_capnp::server::NetworkParams,
+        mut results: server_capnp::server::NetworkResults,
+    ) -> Result<(), capnp::Error> {
+        let name = match self.network {
+            bdk_wallet::bitcoin::Network::Bitcoin => "bitcoin",
+            bdk_wallet::bitcoin::Network::Testnet => "testnet",
+            bdk_wallet::bitcoin::Network::Signet => "signet",
+            bdk_wallet::bitcoin::Network::Regtest => "regtest",
+            other => return Err(failed(format!("unknown network {other:?}"))),
+        };
+        results.get().set_name(name);
+        Ok(())
+    }
+
     async fn get_required_peers(
         self: capnp::capability::Rc<Self>,
         _: server_capnp::server::GetRequiredPeersParams,

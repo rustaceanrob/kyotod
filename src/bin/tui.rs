@@ -76,6 +76,7 @@ struct App {
     height: Option<u32>,
     peer_count: Option<usize>,
     progress: Option<f32>,
+    network_name: Option<String>,
     list: ListState,
     last_error: Option<String>,
     last_info: Option<String>,
@@ -190,6 +191,9 @@ impl App {
         if snap.required_peers.is_some() {
             self.required_peers = snap.required_peers;
         }
+        if snap.network.is_some() {
+            self.network_name = snap.network;
+        }
         if let Some(e) = snap.error {
             self.last_error = Some(e);
         }
@@ -203,6 +207,7 @@ struct Snapshot {
     peer_count: Option<usize>,
     progress: Option<f32>,
     required_peers: Option<u8>,
+    network: Option<String>,
     error: Option<String>,
 }
 
@@ -752,6 +757,13 @@ async fn poll(client: &server::Client) -> Snapshot {
     if let Ok(resp) = client.get_required_peers_request().send().promise.await {
         if let Ok(r) = resp.get() {
             snap.required_peers = Some(r.get_num());
+        }
+    }
+    if let Ok(resp) = client.network_request().send().promise.await {
+        if let Ok(name) = resp.get().and_then(|r| r.get_name()) {
+            if let Ok(s) = name.to_string() {
+                snap.network = Some(s);
+            }
         }
     }
     snap
@@ -1347,8 +1359,15 @@ fn draw_status(f: &mut Frame<'_>, area: Rect, app: &App) {
         .find(|w| w.active)
         .map(|w| w.name.as_str())
         .unwrap_or("—");
+    let network = app.network_name.as_deref().unwrap_or("—");
     let mut spans = vec![
-        Span::styled(" height ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" network ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            network.to_string(),
+            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("   "),
+        Span::styled("height ", Style::default().fg(Color::DarkGray)),
         Span::raw(height),
         Span::raw("   "),
         Span::styled("peers ", Style::default().fg(Color::DarkGray)),

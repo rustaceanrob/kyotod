@@ -24,4 +24,5 @@ interface Server {
     addPeer @13 (ip :Text, port :UInt16) -> (ok :Bool, message :Text);
     setRequiredPeers @14 (num :UInt8) -> (ok :Bool, message :Text);
     getRequiredPeers @15 () -> (num :UInt8);
+    network @16 () -> (name :Text);
 }
