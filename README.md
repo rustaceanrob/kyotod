@@ -7,7 +7,7 @@ A daemon-style wallet built around a BIP-157 compact-block-filter light client
 (via [`bdk_kyoto`](https://crates.io/crates/bdk_kyoto)). Wallets are described as
 [BIP-139](https://github.com/bitcoin/bips/blob/master/bip-0139.mediawiki)
 metadata backups and persisted to SQLite. A Cap'n Proto IPC server on a unix
-socket exposes the wallet surface to a `tui` client.
+socket exposes the wallet surface to a `kyoto-tui` client.
 
 ## Dependencies
 
@@ -19,7 +19,7 @@ socket exposes the wallet surface to a `tui` client.
 | Binary       | Role                                                                                     |
 |--------------|------------------------------------------------------------------------------------------|
 | `kyotod`     | The daemon. Loads wallets, drives the light client, serves IPC.                          |
-| `tui`        | Interactive terminal UI over the IPC socket.                                             |
+| `kyoto-tui`  | Interactive terminal UI over the IPC socket.                                             |
 
 
 ## Quick start
@@ -35,17 +35,17 @@ cargo run --bin kyotod --release
 Then launch the TUI.
 
 ```sh
-cargo run --bin tui --release
+cargo run --bin kyoto-tui --release
 ```
 
 ## Using the TUI
 
-`tui` is an interactive front-end on the same unix socket. Start the
+`kyoto-tui` is an interactive front-end on the same unix socket. Start the
 daemon, then:
 
 ```sh
-cargo run --bin tui --release   # default --datadir ~/.kyotod
-cargo run --bin tui --release -- --datadir /path/to/dd
+cargo run --bin kyoto-tui --release   # default --datadir ~/.kyotod
+cargo run --bin kyoto-tui --release -- --datadir /path/to/dd
 ```
 
 ### Importing wallets

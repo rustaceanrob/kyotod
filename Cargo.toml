@@ -32,4 +32,5 @@ spec = "config_spec.toml"
 name = "kyotod"
 
 [[bin]]
-name = "tui"
+name = "kyoto-tui"
+path = "src/bin/tui.rs"

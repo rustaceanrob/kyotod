@@ -1140,14 +1140,14 @@ fn draw_help(f: &mut Frame<'_>) {
 
 fn draw_title(f: &mut Frame<'_>, area: Rect, app: &App) {
     let label = match app.screen() {
-        Screen::Wallets => " tui  wallets ",
-        Screen::Wallet => " tui  wallet ",
-        Screen::Send => " tui  send ",
-        Screen::Result => " tui  result ",
-        Screen::Create => " tui  create wallet ",
-        Screen::Import => " tui  import wallet ",
-        Screen::Network => " tui  network ",
-        Screen::Broadcast => " tui  broadcast ",
+        Screen::Wallets => " kyoto-tui  wallets ",
+        Screen::Wallet => " kyoto-tui  wallet ",
+        Screen::Send => " kyoto-tui  send ",
+        Screen::Result => " kyoto-tui  result ",
+        Screen::Create => " kyoto-tui  create wallet ",
+        Screen::Import => " kyoto-tui  import wallet ",
+        Screen::Network => " kyoto-tui  network ",
+        Screen::Broadcast => " kyoto-tui  broadcast ",
     };
     let p = Paragraph::new(Span::styled(
         label,
