@@ -19,5 +19,5 @@ doc = "Connect only to this peer (ip:port or hostname:port)."
 [[param]]
 name = "daemon"
 type = "bool"
-default = "false"
-doc = "Fork into the background after startup."
+default = "true"
+doc = "Fork into the background after startup. Pass --daemon false to run in the foreground."

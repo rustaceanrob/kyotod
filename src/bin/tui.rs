@@ -45,9 +45,32 @@ enum Screen {
     Import,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum Unit {
+    #[default]
+    Sats,
+    Btc,
+}
+
+impl Unit {
+    fn toggle(self) -> Self {
+        match self {
+            Unit::Sats => Unit::Btc,
+            Unit::Btc => Unit::Sats,
+        }
+    }
+    fn format(self, sats: u64) -> String {
+        match self {
+            Unit::Sats => format!("{sats} sats"),
+            Unit::Btc => format!("{:.8} BTC", sats as f64 / 100_000_000.0),
+        }
+    }
+}
+
 #[derive(Default)]
 struct App {
     screen_stack: Vec<Screen>,
+    unit: Unit,
     wallets: Vec<WalletRow>,
     height: Option<u32>,
     peer_count: Option<usize>,
@@ -631,6 +654,14 @@ fn handle_event(app: &mut App, event: Event) -> Action {
         app.show_help = !app.show_help;
         return Action::None;
     }
+    let on_form = matches!(
+        app.screen(),
+        Screen::Send | Screen::Create | Screen::Import
+    );
+    if !on_form && key.code == KeyCode::Char('u') {
+        app.unit = app.unit.toggle();
+        return Action::None;
+    }
     if app.show_help {
         if matches!(key.code, KeyCode::Esc) {
             app.show_help = false;
@@ -806,7 +837,7 @@ fn draw_help(f: &mut Frame<'_>) {
     let dim = Style::default().fg(Color::DarkGray);
     let lines = vec![
         Line::from(Span::styled("global", bold)),
-        Line::from(vec![Span::styled("  ? ", dim), Span::raw("help"), Span::styled("    Ctrl+c ", dim), Span::raw("quit")]),
+        Line::from(vec![Span::styled("  ? ", dim), Span::raw("help"), Span::styled("    u ", dim), Span::raw("toggle sats/BTC"), Span::styled("    Ctrl+c ", dim), Span::raw("quit")]),
         Line::from(""),
         Line::from(Span::styled("wallets list", bold)),
         Line::from(vec![Span::styled("  j/k ", dim), Span::raw("move    "), Span::styled("Enter ", dim), Span::raw("open    "), Span::styled("c ", dim), Span::raw("create    "), Span::styled("i ", dim), Span::raw("import")]),
@@ -913,7 +944,7 @@ fn draw_wallet_list(f: &mut Frame<'_>, area: Rect, app: &App) {
                     },
                 ),
                 Span::styled(
-                    format!("{:>14} sats", w.sats),
+                    format!("{:>20}", app.unit.format(w.sats)),
                     Style::default().fg(Color::Yellow),
                 ),
             ]);
@@ -953,8 +984,8 @@ fn draw_wallet(f: &mut Frame<'_>, area: Rect, app: &App) {
         .split(cols[0]);
     let balance_line = match row {
         Some(r) => format!(
-            "{}\nactive: {}",
-            format!("balance: {} sats", r.sats),
+            "balance: {}\nactive: {}",
+            app.unit.format(r.sats),
             if r.active { "yes" } else { "no" },
         ),
         None => "(not in current balances)".to_string(),
@@ -1065,7 +1096,7 @@ fn draw_result(f: &mut Frame<'_>, area: Rect, app: &App) {
     let mut lines = vec![
         Line::from(format!("psbt:    {}", res.psbt_path)),
         Line::from(format!("txid:    {}", res.txid)),
-        Line::from(format!("fee:     {} sats", res.fee_sats)),
+        Line::from(format!("fee:     {}", app.unit.format(res.fee_sats))),
         Line::from(format!(
             "signed:  {}",
             if res.signed { "yes" } else { "no" }
@@ -1154,6 +1185,13 @@ fn draw_keys(f: &mut Frame<'_>, area: Rect, app: &App) {
         ],
     };
     spans.push(text("   "));
+    if !matches!(app.screen(), Screen::Send | Screen::Create | Screen::Import) {
+        spans.push(key("u "));
+        spans.push(text(match app.unit {
+            Unit::Sats => "→BTC ",
+            Unit::Btc => "→sats ",
+        }));
+    }
     spans.push(key("? "));
     spans.push(text("help"));
     f.render_widget(Paragraph::new(Line::from(spans)), area);

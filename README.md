@@ -29,7 +29,7 @@ Start the daemon in the background, which is intended to run continuously. `kyot
 ```sh
 # 1. Start the daemon (signet by default). It will sit idle until a wallet
 #    exists, then begin syncing.
-cargo run --bin kyotod --release --daemon true
+cargo run --bin kyotod --release
 ```
 
 Then launch the TUI.
@@ -80,6 +80,6 @@ Each parameter can be set via CLI flag or environment variable:
 | `--network <N>`       | `KYOTOD_NETWORK`       | `signet`       | `bitcoin`, `signet`, `testnet`, `testnet4`, `regtest`.                         |
 | `--datadir <PATH>`    | `KYOTOD_DATADIR`       | `~/.kyotod`    | Holds wallets, sqlite stores, socket, pid file, log.                           |
 | `--connect <ADDR>`    | `KYOTOD_CONNECT`       | unset          | Optional `ip:port` or `host:port` for a single peer (skips DNS bootstrap).     |
-| `--daemon true`       | `KYOTOD_DAEMON`        | `false`        | Fork into the background after startup.                                        |
+| `--daemon <BOOL>`     | `KYOTOD_DAEMON`        | `true`         | Fork into the background after startup. Pass `--daemon false` for foreground.  |
 
 Default `--datadir` is `~/.kyotod`. The socket is always `<datadir>/node.sock`.
