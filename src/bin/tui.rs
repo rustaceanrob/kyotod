@@ -79,6 +79,7 @@ struct App {
     last_error: Option<String>,
     last_info: Option<String>,
     show_help: bool,
+    confirm_shutdown: bool,
     quit: bool,
 
     // Wallet-detail state (keyed to the currently focused wallet name).
@@ -207,6 +208,7 @@ enum Action {
     OpenImport,
     SubmitCreate,
     SubmitImport,
+    ShutdownDaemon,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -398,6 +400,19 @@ async fn dispatch(app: &mut App, action: Action, client: &server::Client) {
             }
             Err(e) => app.last_error = Some(e),
         },
+        Action::ShutdownDaemon => {
+            match client.shutdown_request().send().promise.await {
+                Ok(_) => app.quit = true,
+                Err(e) => {
+                    let msg = clean(&e.to_string());
+                    if msg.contains("disconnected") || msg.contains("EOF") || msg.contains("broken pipe") {
+                        app.quit = true;
+                    } else {
+                        app.last_error = Some(format!("shutdown: {msg}"));
+                    }
+                }
+            }
+        }
         Action::Broadcast => {
             if let Some(res) = app.result.as_mut() {
                 if res.raw_tx.is_empty() {
@@ -668,6 +683,19 @@ fn handle_event(app: &mut App, event: Event) -> Action {
         }
         return Action::None;
     }
+    if app.confirm_shutdown {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                app.confirm_shutdown = false;
+                return Action::ShutdownDaemon;
+            }
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                app.confirm_shutdown = false;
+            }
+            _ => {}
+        }
+        return Action::None;
+    }
     match app.screen() {
         Screen::Wallets => match key.code {
             KeyCode::Char('q') => Action::Quit,
@@ -683,6 +711,10 @@ fn handle_event(app: &mut App, event: Event) -> Action {
             KeyCode::Char('a') => Action::SetActive,
             KeyCode::Char('c') => Action::OpenCreate,
             KeyCode::Char('i') => Action::OpenImport,
+            KeyCode::Char('X') => {
+                app.confirm_shutdown = true;
+                Action::None
+            }
             _ => Action::None,
         },
         Screen::Wallet => match key.code {
@@ -816,6 +848,39 @@ fn draw(f: &mut Frame<'_>, app: &App) {
     if app.show_help {
         draw_help(f);
     }
+    if app.confirm_shutdown {
+        draw_shutdown_confirm(f);
+    }
+}
+
+fn draw_shutdown_confirm(f: &mut Frame<'_>) {
+    let area = f.area();
+    let w: u16 = 50.min(area.width.saturating_sub(4));
+    let h: u16 = 6.min(area.height.saturating_sub(2));
+    let rect = Rect {
+        x: area.x + area.width.saturating_sub(w) / 2,
+        y: area.y + area.height.saturating_sub(h) / 2,
+        width: w,
+        height: h,
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" shutdown daemon ")
+        .style(Style::default().bg(Color::Black));
+    let inner = block.inner(rect);
+    let lines = vec![
+        Line::from("Stop kyotod? Sync will halt until restart."),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("y", Style::default().fg(Color::Cyan)),
+            Span::raw(" confirm    "),
+            Span::styled("n/Esc", Style::default().fg(Color::Cyan)),
+            Span::raw(" cancel"),
+        ]),
+    ];
+    f.render_widget(Clear, rect);
+    f.render_widget(block, rect);
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_help(f: &mut Frame<'_>) {
@@ -841,7 +906,7 @@ fn draw_help(f: &mut Frame<'_>) {
         Line::from(""),
         Line::from(Span::styled("wallets list", bold)),
         Line::from(vec![Span::styled("  j/k ", dim), Span::raw("move    "), Span::styled("Enter ", dim), Span::raw("open    "), Span::styled("c ", dim), Span::raw("create    "), Span::styled("i ", dim), Span::raw("import")]),
-        Line::from(vec![Span::styled("  a ", dim), Span::raw("set-active    "), Span::styled("q ", dim), Span::raw("quit")]),
+        Line::from(vec![Span::styled("  a ", dim), Span::raw("set-active    "), Span::styled("q ", dim), Span::raw("quit    "), Span::styled("X ", dim), Span::raw("shutdown daemon")]),
         Line::from(""),
         Line::from(Span::styled("wallet detail", bold)),
         Line::from(vec![Span::styled("  r ", dim), Span::raw("reveal address    "), Span::styled("s ", dim), Span::raw("send")]),
@@ -1163,7 +1228,7 @@ fn draw_keys(f: &mut Frame<'_>, area: Rect, app: &App) {
         Screen::Wallets => vec![
             key(" j/k "), text("move "), key("Enter "), text("open "),
             key("c "), text("create "), key("i "), text("import "),
-            key("a "), text("set-active "), key("q "), text("quit"),
+            key("a "), text("set-active "), key("X "), text("shutdown "), key("q "), text("quit"),
         ],
         Screen::Wallet => vec![
             key(" r "), text("reveal "), key("s "), text("send "),
