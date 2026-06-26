@@ -1358,14 +1358,34 @@ fn draw_wallet(f: &mut Frame<'_>, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(balance_line), left[0]);
     let history = app.history.as_deref().unwrap_or("(loading...)");
     let history_block = Block::default().borders(Borders::TOP).title(" history ");
+    let history_para = if app.history.is_none() {
+        Paragraph::new("(loading...)")
+    } else if history.is_empty() {
+        Paragraph::new("(no relevant transactions yet)")
+    } else {
+        let lines: Vec<Line> = history
+            .lines()
+            .map(|l| {
+                let color = if l.starts_with("recv") {
+                    Some(Color::Green)
+                } else if l.starts_with("sent") {
+                    Some(Color::Red)
+                } else {
+                    None
+                };
+                match color {
+                    Some(c) if l.len() >= 4 => Line::from(vec![
+                        Span::styled(l[..4].to_string(), Style::default().fg(c)),
+                        Span::raw(l[4..].to_string()),
+                    ]),
+                    _ => Line::from(l.to_string()),
+                }
+            })
+            .collect();
+        Paragraph::new(lines)
+    };
     f.render_widget(
-        Paragraph::new(if history.is_empty() {
-            "(no relevant transactions yet)"
-        } else {
-            history
-        })
-        .block(history_block)
-        .wrap(Wrap { trim: false }),
+        history_para.block(history_block).wrap(Wrap { trim: false }),
         left[1],
     );
 
