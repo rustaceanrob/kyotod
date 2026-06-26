@@ -101,11 +101,26 @@ struct App {
     result: Option<BuildResult>,
 }
 
-#[derive(Default)]
 struct NetworkForm {
     ip: String,
     port: String,
-    focus: u8, // 0=ip, 1=port
+    tor_ip: String,
+    tor_port: String,
+    tor_enabled: bool,
+    focus: u8, // 0=peer ip, 1=peer port, 2=tor ip, 3=tor port
+}
+
+impl Default for NetworkForm {
+    fn default() -> Self {
+        Self {
+            ip: String::new(),
+            port: String::new(),
+            tor_ip: "127.0.0.1".into(),
+            tor_port: "9050".into(),
+            tor_enabled: false,
+            focus: 0,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -243,6 +258,8 @@ enum Action {
     AddPeer,
     IncreasePeers,
     DecreasePeers,
+    ToggleTorEnabled,
+    ApplyTor,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -436,9 +453,67 @@ async fn dispatch(app: &mut App, action: Action, client: &server::Client) {
         },
         Action::OpenNetwork => {
             app.network = NetworkForm::default();
+            if let Ok(resp) = client.get_tor_proxy_request().send().promise.await {
+                if let Ok(r) = resp.get() {
+                    app.network.tor_enabled = r.get_enabled();
+                    if let Ok(ip) = r.get_ip().and_then(|t| Ok(t.to_string()?)) {
+                        app.network.tor_ip = ip;
+                    }
+                    let port = r.get_port();
+                    if port != 0 {
+                        app.network.tor_port = port.to_string();
+                    }
+                }
+            }
             app.last_error = None;
             app.last_info = None;
             app.push(Screen::Network);
+        }
+        Action::ToggleTorEnabled => {
+            app.network.tor_enabled = !app.network.tor_enabled;
+        }
+        Action::ApplyTor => {
+            let ip = app.network.tor_ip.trim().to_string();
+            let port: u16 = if app.network.tor_port.trim().is_empty() {
+                9050
+            } else {
+                match app.network.tor_port.trim().parse() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        app.last_error = Some(format!("tor port: {e}"));
+                        return;
+                    }
+                }
+            };
+            if app.network.tor_enabled && ip.is_empty() {
+                app.last_error = Some("tor ip required when enabled".into());
+                return;
+            }
+            let mut req = client.set_tor_proxy_request();
+            req.get().set_enabled(app.network.tor_enabled);
+            req.get().set_ip(ip.as_str());
+            req.get().set_port(port);
+            match req.send().promise.await {
+                Ok(resp) => match resp.get() {
+                    Ok(r) => {
+                        let msg = r
+                            .get_message()
+                            .ok()
+                            .and_then(|t| t.to_string().ok())
+                            .unwrap_or_default();
+                        if r.get_ok() {
+                            app.last_info = Some(msg);
+                            app.last_error = None;
+                        } else {
+                            app.last_error = Some(msg);
+                        }
+                    }
+                    Err(e) => app.last_error = Some(format!("set-tor-proxy: {e}")),
+                },
+                Err(e) => {
+                    app.last_error = Some(format!("set-tor-proxy: {}", clean(&e.to_string())))
+                }
+            }
         }
         Action::OpenBroadcast => {
             app.broadcast = BroadcastForm::default();
@@ -950,13 +1025,20 @@ fn handle_broadcast(app: &mut App, key: crossterm::event::KeyEvent) -> Action {
 fn handle_network(app: &mut App, key: crossterm::event::KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => Action::Back,
-        KeyCode::Enter => Action::AddPeer,
+        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::ALT) => Action::ToggleTorEnabled,
+        KeyCode::Enter => {
+            if app.network.focus >= 2 {
+                Action::ApplyTor
+            } else {
+                Action::AddPeer
+            }
+        }
         KeyCode::Tab => {
-            app.network.focus = (app.network.focus + 1) % 2;
+            app.network.focus = (app.network.focus + 1) % 4;
             Action::None
         }
         KeyCode::BackTab => {
-            app.network.focus = (app.network.focus + 1) % 2;
+            app.network.focus = (app.network.focus + 3) % 4;
             Action::None
         }
         KeyCode::Char('+') | KeyCode::Char('=') => Action::IncreasePeers,
@@ -976,7 +1058,9 @@ fn handle_network(app: &mut App, key: crossterm::event::KeyEvent) -> Action {
 fn network_field_mut(form: &mut NetworkForm) -> &mut String {
     match form.focus {
         0 => &mut form.ip,
-        _ => &mut form.port,
+        1 => &mut form.port,
+        2 => &mut form.tor_ip,
+        _ => &mut form.tor_port,
     }
 }
 
@@ -1574,6 +1658,8 @@ fn draw_network(f: &mut Frame<'_>, area: Rect, app: &App) {
             Constraint::Length(2),
             Constraint::Length(2),
             Constraint::Length(2),
+            Constraint::Length(2),
+            Constraint::Length(2),
             Constraint::Min(0),
         ])
         .split(inner);
@@ -1610,12 +1696,31 @@ fn draw_network(f: &mut Frame<'_>, area: Rect, app: &App) {
         app.network.focus == 1,
     );
 
-    let hint = Paragraph::new(Line::from(Span::styled(
-        "Tab moves between fields. Enter adds the peer to the active light client (and to the rebuild whitelist).",
-        Style::default().fg(Color::DarkGray),
-    )))
+    let tor_label = format!(
+        "tor socks5 proxy ip   [{}]   (Alt+t to toggle)",
+        if app.network.tor_enabled { "on" } else { "off" }
+    );
+    draw_field(f, rows[3], &tor_label, &app.network.tor_ip, app.network.focus == 2);
+    draw_field(
+        f,
+        rows[4],
+        "tor socks5 proxy port",
+        &app.network.tor_port,
+        app.network.focus == 3,
+    );
+
+    let hint = Paragraph::new(vec![
+        Line::from(Span::styled(
+            "Tab moves between fields. Enter on peer fields adds the peer; Enter on tor fields applies the proxy.",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "Default tor proxy: 127.0.0.1:9050. Toggling or applying rebuilds the light client.",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ])
     .wrap(Wrap { trim: false });
-    f.render_widget(hint, rows[3]);
+    f.render_widget(hint, rows[5]);
 }
 
 fn draw_import(f: &mut Frame<'_>, area: Rect, app: &App) {

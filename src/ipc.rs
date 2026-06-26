@@ -19,7 +19,7 @@ use tracing::{debug, error};
 
 use crate::paths::Layout;
 use crate::server_capnp;
-use crate::sync::{ProgressSlot, RequiredPeers, TrustedPeers};
+use crate::sync::{ProgressSlot, RequiredPeers, TorProxy, TrustedPeers};
 use crate::wallet::{self, State};
 
 pub type RequesterSlot = Arc<Mutex<Option<Requester>>>;
@@ -32,6 +32,7 @@ pub struct IpcInterface {
     progress: ProgressSlot,
     required_peers: RequiredPeers,
     trusted_peers: TrustedPeers,
+    tor_proxy: TorProxy,
     layout: Arc<Layout>,
     network: bdk_wallet::bitcoin::Network,
 }
@@ -45,6 +46,7 @@ impl IpcInterface {
         progress: ProgressSlot,
         required_peers: RequiredPeers,
         trusted_peers: TrustedPeers,
+        tor_proxy: TorProxy,
         layout: Arc<Layout>,
         network: bdk_wallet::bitcoin::Network,
     ) -> Self {
@@ -56,6 +58,7 @@ impl IpcInterface {
             progress,
             required_peers,
             trusted_peers,
+            tor_proxy,
             layout,
             network,
         }
@@ -91,6 +94,7 @@ pub struct ServerArgs {
     pub progress: ProgressSlot,
     pub required_peers: RequiredPeers,
     pub trusted_peers: TrustedPeers,
+    pub tor_proxy: TorProxy,
 }
 
 pub fn spawn_server(args: ServerArgs) {
@@ -141,6 +145,7 @@ async fn accept_loop(args: ServerArgs) {
             args.progress.clone(),
             args.required_peers.clone(),
             args.trusted_peers.clone(),
+            args.tor_proxy.clone(),
             args.layout.clone(),
             args.network,
         );
@@ -646,6 +651,69 @@ impl server_capnp::server::Server for IpcInterface {
     ) -> Result<(), capnp::Error> {
         let n = *self.required_peers.lock().unwrap();
         results.get().set_num(n);
+        Ok(())
+    }
+
+    async fn set_tor_proxy(
+        self: capnp::capability::Rc<Self>,
+        params: server_capnp::server::SetTorProxyParams,
+        mut results: server_capnp::server::SetTorProxyResults,
+    ) -> Result<(), capnp::Error> {
+        let p = params.get()?;
+        let enabled = p.get_enabled();
+        let new_value = if enabled {
+            let ip_str = p.get_ip()?.to_string()?;
+            let port = p.get_port();
+            let ip: std::net::IpAddr = ip_str
+                .parse()
+                .map_err(|e| failed(format!("invalid ip '{ip_str}': {e}")))?;
+            let port = if port == 0 { 9050 } else { port };
+            Some(std::net::SocketAddr::new(ip, port))
+        } else {
+            None
+        };
+        *self.tor_proxy.lock().unwrap() = new_value;
+        let mut r = results.get();
+        if self.requester.lock().unwrap().is_some() {
+            if let Err(e) = self.rebuild_tx.send(()).await {
+                r.set_ok(false);
+                r.set_message(format!("rebuild signal: {e}").as_str());
+                return Ok(());
+            }
+            r.set_ok(true);
+            r.set_message(match new_value {
+                Some(a) => format!("routing through Socks5 proxy {a}; rebuilding"),
+                None => "Socks5 proxy disabled; rebuilding".to_string(),
+            }.as_str());
+        } else {
+            r.set_ok(true);
+            r.set_message(match new_value {
+                Some(a) => format!("Socks5 proxy set to {a}"),
+                None => "Socks5 proxy disabled".to_string(),
+            }.as_str());
+        }
+        Ok(())
+    }
+
+    async fn get_tor_proxy(
+        self: capnp::capability::Rc<Self>,
+        _: server_capnp::server::GetTorProxyParams,
+        mut results: server_capnp::server::GetTorProxyResults,
+    ) -> Result<(), capnp::Error> {
+        let current = *self.tor_proxy.lock().unwrap();
+        let mut r = results.get();
+        match current {
+            Some(addr) => {
+                r.set_enabled(true);
+                r.set_ip(addr.ip().to_string().as_str());
+                r.set_port(addr.port());
+            }
+            None => {
+                r.set_enabled(false);
+                r.set_ip("127.0.0.1");
+                r.set_port(9050);
+            }
+        }
         Ok(())
     }
 }

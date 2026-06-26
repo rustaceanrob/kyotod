@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
+use bdk_kyoto::bip157::Socks5Proxy;
 use bdk_kyoto::builder::{Builder, BuilderExt};
 use bdk_kyoto::{
     bip157::tokio, wallets, Info, Receiver, Requester, ScanType, TrustedPeer, UnboundedReceiver,
@@ -11,6 +12,7 @@ use bdk_kyoto::{
 pub type ProgressSlot = Arc<Mutex<Option<f32>>>;
 pub type RequiredPeers = Arc<Mutex<u8>>;
 pub type TrustedPeers = Arc<Mutex<Vec<SocketAddr>>>;
+pub type TorProxy = Arc<Mutex<Option<SocketAddr>>>;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::chain::{DescriptorExt, DescriptorId};
 use bdk_wallet::KeychainKind;
@@ -32,6 +34,7 @@ pub fn spawn(
     progress: ProgressSlot,
     required_peers: RequiredPeers,
     trusted_peers: TrustedPeers,
+    tor_proxy: TorProxy,
 ) -> SyncHandle {
     let client = {
         let guard = state.lock().unwrap();
@@ -58,6 +61,10 @@ pub fn spawn(
             .collect();
         if !trusted.is_empty() {
             b = b.add_peers(trusted);
+        }
+        if let Some(addr) = *tor_proxy.lock().unwrap() {
+            info!(target: "node", "routing peer connections through Socks5 proxy {addr}");
+            b = b.socks5_proxy(Socks5Proxy::new(addr));
         }
         b.build_with_wallets(wallets)
             .expect("failed to build light client")

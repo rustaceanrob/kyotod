@@ -26,4 +26,6 @@ interface Server {
     getRequiredPeers @15 () -> (num :UInt8);
     network @16 () -> (name :Text);
     broadcastPsbt @17 (path :Text, finalize :Bool) -> (txid :Text);
+    setTorProxy @18 (enabled :Bool, ip :Text, port :UInt16) -> (ok :Bool, message :Text);
+    getTorProxy @19 () -> (enabled :Bool, ip :Text, port :UInt16);
 }
